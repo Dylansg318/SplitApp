@@ -469,3 +469,114 @@ of a default**. It matters more here — every tesseract.js worker holds its own
 WASM engine plus ~15MB of language data. The bake-off pool drops from 4 to 2
 (`BAKEOFF_WORKERS` to override) and `vitest.config.ts` pins `maxWorkers: 2`
 rather than taking a pool sized to the CPU count.
+
+### Measured, and the first design was net-neutral
+
+Eight simulated hand-held frames per receipt, four receipts with hand-read truth:
+
+| receipt | single frame | streak gate |
+|---|---|---|
+| QUI A4 | refused | **CORRECT at frame 2** |
+| QUI D7 | refused | refused |
+| QUI C7 | refused | refused |
+| THAI | **CORRECT** | **refused** |
+
+**1/4 either way — it gained one receipt and lost one.** Neither produced a
+wrong answer.
+
+The loss is the useful half. MHLHUB's own table shows confirmation COSTS
+acceptance (154/220 -> 108/220); they took that trade because wrong reads went
+9 -> 0. **We were already at zero wrong**, on 40 synthetic fixtures and on 13
+real photographs, because the reconciler does that job. A barcode carries no
+internal check — a checksum-valid EAN-13 is indistinguishable from the truth,
+so the streak is its ONLY defence. A receipt states its own arithmetic. Applying
+the gate unchanged meant paying the recall price for a safety benefit already
+held.
+
+This is the part of a port that does not survive translation, and it is only
+visible by measuring: the borrowed policy was correct in its original setting
+and wrong here, for a reason specific to what the two payloads can prove about
+themselves.
+
+**But the streak recovered QUI A4, which arithmetic alone could not** — a field
+lost to one pose was present in another. So both mechanisms contribute, and the
+question is the order they are applied in, not which one wins.
+
+The synthesis under measurement: a frame that reconciles ON ITS OWN is already
+backed by the receipt's own arithmetic, so there is nothing a second frame adds
+— accept it. Only when no single frame settles does the accumulated view earn
+its keep, filling a field one angle lost. Consensus becomes a fallback that adds
+recall, rather than a gate that subtracts it.
+
+## The benchmark was wrong, and fixing it changed the answer
+
+Dylan: *"these are all standing receipts that aren't moving... most will be
+scanned from the camera itself so a live video that can have multiple positions
+and lighting with flash should be better."* Correct, and it invalidated the
+measurement.
+
+Every frame in the hand-held bench was a re-jitter of ONE photograph. A decimal
+lost in that capture stayed lost in all eight. That models hand tremor but not
+RE-OBSERVATION, which is where the new information actually comes from — a live
+camera re-samples the paper with fresh autofocus, different parallax, moving
+specular highlights, flash. MHLHUB's scan-bench renders CLEAN and degrades every
+frame independently, with an AR(1) walk controlling neighbour similarity; its
+`rho = 1` frozen-pose case is the pessimistic bound, and its README notes the
+byte-identical case is untested. **The bench was worse than that bound**: not
+merely frozen, but re-jittering already-lossy pixels.
+
+`scripts/session-bench.ts` replaces it, following the same method. The
+`sqrt(1 - rho^2)` term is load-bearing and easy to miss: it holds the MARGINAL
+degradation constant at every spacing, so frames do not quietly get easier as
+they spread apart — only less alike. Without it, widening the spacing would make
+the streak look good for entirely the wrong reason.
+
+### The first honest run was saturated, the second found a wrong answer
+
+At the original degradation every policy settled every session. Per MHLHUB's own
+note — if everything answers, move nearer the cliff — difficulty is now swept.
+
+| difficulty | policy | settled | correct | WRONG |
+|---|---|---|---|---|
+| 0.8 | single | 18/20 | 18 | 0 |
+| 0.8 | streak | 12/20 | 12 | 0 |
+| 0.8 | combined | 18/20 | 18 | 0 |
+| **1.1** | **single** | **4/20** | 3 | **1** |
+| **1.1** | **streak** | **1/20** | 1 | **0** |
+| **1.1** | **combined** | **4/20** | 3 | **1** |
+| 1.4 | all | 0/20 | 0 | 0 |
+
+**This corrects the previous entry.** "We are already at zero wrong, so the
+streak buys nothing" held only in the easy regimes tested. At marginal quality
+the streak's protection appears exactly where MHLHUB predicted, and the combined
+policy inherits single-frame's wrong answer.
+
+Sample far too small to quantify — MHLHUB's README puts telling 0% from 0.8%
+at ~1,500 accepted sessions, and this is 4. It is a signal, not a rate.
+
+### Design consequence: ordering stays, confirmation carries the risk
+
+The combined ordering is kept, because on real receipts it strictly dominates
+(2/4 against 1/4 for either alone, zero wrong) and at difficulty 0.8 it costs
+nothing. The marginal-quality risk is handled where the design already put it
+rather than by gating acceptance: a settlement that required REPAIRS is exactly
+where a wrong single-frame answer comes from, and invariant 2 already says such
+a split is never displayed until the user confirms the correction. The streak
+reduces how often that confirmation is needed; it should not decide whether an
+answer may be offered at all.
+
+What consensus actually contributes was also mis-stated and is now corrected in
+`src/pipeline.ts`: it cannot fill a gap, because it only ever reports values
+that REPEATED. It DELETES NOISE. On QUI A4 every frame carried spurious items
+summing to $642 against a printed $141 subtotal; junk read off a table edge does
+not survive the hand moving, so it never confirms and the contradiction
+disappears. Same suppression MHLHUB gets against fabricated barcodes, appearing
+here as unstable line items rather than a wrong payload.
+
+### Still unmeasurable from what we have
+
+Real re-observation cannot be simulated from a single JPEG. Needed: a short
+video or burst of one receipt while the phone moves, and a flash comparison.
+Flash is the larger untested lever — dim fixtures went 0% -> 80% on software
+preprocessing alone, and flash attacks that at source instead of repairing it.
+MHLHUB's `<CameraScanner>` already has a working torch toggle to lift.
