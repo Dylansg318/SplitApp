@@ -14,12 +14,15 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { existsSync } from 'node:fs';
 import { TesseractEngine } from '../src/ocr/tesseract';
+import { preparePng } from '../src/ocr/node';
 import type { OcrEngine } from '../src/ocr/engine';
 import type { ReceiptGroundTruth, Word, Cents } from '../src/types';
 import { parseCents } from '../src/types';
 
 const ROOT = join(import.meta.dirname, '..', 'fixtures', 'receipts');
 const POOL_SIZE = 4;
+/** `npm run bakeoff -- --raw` measures without preprocessing, for comparison. */
+const PREPROCESS = !process.argv.includes('--raw');
 
 interface Fixture {
   gt: ReceiptGroundTruth;
@@ -102,7 +105,8 @@ function levenshtein(a: string, b: string): number {
 }
 
 async function measure(engine: OcrEngine, fx: Fixture): Promise<Measurement> {
-  const result = await engine.recognize(fx.imagePath);
+  const input = PREPROCESS ? await preparePng(fx.imagePath) : fx.imagePath;
+  const result = await engine.recognize(input);
   const got = moneyTokens(result.words);
 
   const fields: [string, Cents][] = [
@@ -141,7 +145,10 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  console.log(`Bake-off over ${fixtures.length} fixtures (${POOL_SIZE} workers)\n`);
+  console.log(
+    `Bake-off over ${fixtures.length} fixtures (${POOL_SIZE} workers, ` +
+      `preprocessing ${PREPROCESS ? 'ON' : 'OFF'})\n`,
+  );
 
   const engines = Array.from({ length: POOL_SIZE }, () => new TesseractEngine());
   await Promise.all(engines.map((e) => e.init()));

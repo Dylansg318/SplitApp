@@ -14,6 +14,12 @@ export interface LineItem {
 export interface ParsedReceipt {
   items: LineItem[];
   fields: Record<FieldName, Cents | null>;
+  /**
+   * Fields whose LABEL was found but whose value would not parse. Different
+   * from absent: the receipt does state this number, we simply could not read
+   * it, which is worth telling the user rather than silently deriving.
+   */
+  unreadable: FieldName[];
   /** Where each field was found, for highlighting a suspect line. */
   fieldRows: Partial<Record<FieldName, number>>;
   rows: Row[];
@@ -32,6 +38,13 @@ const LABELS: [FieldName, RegExp][] = [
   ['tip', /\b(TIP|GRATUITY|SERVICE\s?(CHARGE|CHG)?)\b/],
   ['total', /\b(GRAND\s?TOTAL|TOTAL|BALANCE(\s?DUE)?|AMOUNT\s?DUE)\b/],
 ];
+
+/**
+ * Anchored forms of the same labels, used only to locate where the totals block
+ * begins. Anchored because this decides what counts as a line item at all, and
+ * an unanchored TIP would match a dish called "TIP TOP BURGER".
+ */
+const BLOCK_START = /^(SUB\s?-?\s?TOTAL|SUBTTL|TAX|VAT|GST|HST|GRAND\s?TOTAL|TOTAL|BALANCE|AMOUNT\s?DUE)\b/;
 
 /** Rows that carry a price but are not part of the bill's arithmetic. */
 const PAYMENT = /\b(CASH|CHANGE|VISA|MASTERCARD|MC|AMEX|DEBIT|CREDIT|CARD|TENDER|AUTH|APPROVED|REF|ACCT)\b/;
@@ -90,12 +103,41 @@ export function parseReceipt(words: Word[]): ParsedReceipt {
   const items: LineItem[] = [];
   const fields: Record<FieldName, Cents | null> = { subtotal: null, tax: null, tip: null, total: null };
   const fieldRows: Partial<Record<FieldName, number>> = {};
+  const unreadable: FieldName[] = [];
+
+  /**
+   * Where the totals block starts. Receipts are ordered — line items, then the
+   * subtotal/tax/tip/total block — and that ordering is the only defence
+   * against a misread label leaking into the items.
+   *
+   * On sushi-dim, "TIP 10.76" was read as "SNIP 10.76". Without this the row
+   * matched no label, became a line item, and its 10.76 was absorbed into the
+   * item sum. That corrupted sum then stood in for an unreadable subtotal and
+   * balanced against the printed total exactly, producing a confidently wrong
+   * bill. Nothing in the arithmetic could catch it, because the tip had been
+   * added to the subtotal — which is precisely what the equations expect.
+   *
+   * Detected from the row TEXT, not from a parsed price: on that same receipt
+   * the SUBTOTAL line's own value was unreadable, and it is the label that
+   * marks the boundary.
+   */
+  const totalsBlockStart = rows.findIndex((row) => BLOCK_START.test(row.text.toUpperCase().trim()));
 
   rows.forEach((row, rowIndex) => {
     if (DIVIDER.test(row.text)) return;
 
     const found = priceOf(row, priceColumnX, tolerance);
-    if (!found) return;
+    const upperRow = row.text.toUpperCase().trim();
+
+    // A label whose value would not parse still tells us the receipt HAS this
+    // number — worth reporting instead of pretending the line was never there.
+    if (!found) {
+      const labelOnly = LABELS.find(([, pattern]) => pattern.test(upperRow));
+      if (labelOnly && fields[labelOnly[0]] === null && !unreadable.includes(labelOnly[0])) {
+        unreadable.push(labelOnly[0]);
+      }
+      return;
+    }
 
     const desc = row.words
       .slice(0, found.at)
@@ -117,9 +159,12 @@ export function parseReceipt(words: Word[]): ParsedReceipt {
 
     if (PAYMENT.test(upper)) return;
     if (!desc) return;
+    // Past the totals block, an unrecognised priced row is a misread label or a
+    // payment line — never a dish. Treating it as one is how a tip becomes food.
+    if (totalsBlockStart !== -1 && rowIndex >= totalsBlockStart) return;
 
     items.push({ desc, price: found.price, rowIndex });
   });
 
-  return { items, fields, fieldRows, rows, priceColumnX };
+  return { items, fields, fieldRows, unreadable, rows, priceColumnX };
 }

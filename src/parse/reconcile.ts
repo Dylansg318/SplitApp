@@ -108,19 +108,46 @@ export function reconcile(parsed: ParsedReceipt): Reconciliation {
     });
   }
 
+  /**
+   * The line items are INDEPENDENT evidence about the subtotal, and the only
+   * evidence the equations do not already contain.
+   *
+   * `subtotal + tax + tip == total` has many solutions. On sushi-dim, OCR read
+   * the subtotal 59.75 as 70.51; because 70.51 + 4.18 happens to equal the
+   * printed total exactly, the books balanced with tip = 0 and a confidently
+   * wrong bill was produced. The true reading — subtotal 59.75, tip 10.76 —
+   * balances just as well. Nothing inside the four totals can separate them.
+   *
+   * Six item prices summing to 59.75 can. When they contradict the printed
+   * subtotal, the receipt is telling two incompatible stories and there is no
+   * safe way to pick one, so the bill is not settled at any cost. This is
+   * invariant 2 in its strongest form: refusing is always available, and a
+   * plausible wrong total is the one outcome that is not.
+   */
+  const subtotalContradicted = (): boolean =>
+    parsed.items.length > 0 && values.subtotal !== null && itemsSum !== values.subtotal;
+
   const itemsCorroborateSubtotal = parsed.items.length > 0 && values.subtotal === itemsSum;
 
-  // 2. An unfilled tip line is the normal pre-tip state, not an error.
-  if (values.tip === null && values.subtotal !== null && values.tax !== null && values.total !== null) {
+  // 2. An unfilled tip line is the normal pre-tip state, not an error — but
+  //    only when the subtotal it is inferred from is itself corroborated.
+  if (
+    values.tip === null &&
+    values.subtotal !== null &&
+    values.tax !== null &&
+    values.total !== null &&
+    !subtotalContradicted()
+  ) {
     if (values.subtotal + values.tax === values.total) {
       values.tip = 0;
       repairs.push({ field: 'tip', from: null, to: 0, reason: 'no tip on the printed bill' });
     }
   }
 
-  // 3. Exactly one field missing: the other three determine it.
+  // 3. Exactly one field missing: the other three determine it — again only
+  //    when the line items do not dispute the subtotal those three rest on.
   const missing = FIELDS.filter((f) => values[f] === null);
-  if (missing.length === 1) {
+  if (missing.length === 1 && !subtotalContradicted()) {
     const field = missing[0]!;
     const derived = solveFor(field, values);
     if (derived !== null) {
@@ -137,7 +164,7 @@ export function reconcile(parsed: ParsedReceipt): Reconciliation {
     }
   }
 
-  if (balances(values)) {
+  if (balances(values) && !subtotalContradicted()) {
     return {
       status: repairs.length === 0 ? 'reconciled' : 'repaired',
       values,
@@ -151,7 +178,9 @@ export function reconcile(parsed: ParsedReceipt): Reconciliation {
   // 4. Everything present but the books do not close: exactly one field is
   //    wrong. Re-derive each in turn and keep only candidates that both balance
   //    and leave every field plausible. A unique survivor is the misread.
-  if (FIELDS.every((f) => values[f] !== null)) {
+  //    Skipped entirely when the items dispute the subtotal, because then more
+  //    than one number is already known to be wrong.
+  if (FIELDS.every((f) => values[f] !== null) && !subtotalContradicted()) {
     const candidates = FIELDS.flatMap((field) => {
       // Items independently confirming the subtotal rules it out as the culprit.
       if (field === 'subtotal' && itemsCorroborateSubtotal) return [];
@@ -183,7 +212,7 @@ export function reconcile(parsed: ParsedReceipt): Reconciliation {
             .map((c) => c.field)
             .join(', ')}). Cannot choose safely.`,
     );
-  } else {
+  } else if (!subtotalContradicted()) {
     problems.push(
       `Could not read ${FIELDS.filter((f) => values[f] === null).join(', ')} from the receipt, ` +
         'and too little is known to derive the missing values.',
