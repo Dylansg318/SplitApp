@@ -61,8 +61,8 @@ API keys, no network after first load. Confidence comes from arithmetic, not fro
 
 - [x] 1. Move Java to `legacy-java/`; Vite+Preact+TS app at root; Tesseract behind `OcrEngine`; bake-off harness   DONE ed4b007
 - [x] 2. Geometric parser (row clustering, price column) + reconciliation engine                                   DONE eea7eff
-- [ ] 3. Camera capture: rear cam, guide frame, multi-frame voting, preprocess (grey/deskew/threshold)             TODO
-- [ ] 4. Split model: assignee sets, family-style default, proportional tax/tip, exact penny rounding              TODO
+- [ ] 3. Camera capture: rear cam, guide frame, multi-frame voting, preprocess (grey/deskew/threshold)             TODO (needs a device)
+- [x] 4. Split model: assignee sets, family-style default, proportional tax/tip, exact penny rounding              DONE a4d219b
 - [ ] 5. Mobile UI: item list, tap-to-assign, inline number editing, reconciliation banner                         TODO
 - [ ] 6. Persistence (IndexedDB) + URL-fragment share + share image via Web Share API                              TODO
 - [ ] 7. PWA shell: manifest, service worker, offline model cache, iOS-safe (no standalone)                        TODO
@@ -171,3 +171,30 @@ Three findings from execution, none of them predicted:
 Known limitation recorded, not fixed: discount and comp lines are unmodelled, so
 `isPlausible` treats `total < subtotal` as a misread. Revisit when a real receipt
 in `fixtures/receipts/real/` has a discount on it.
+
+## Slice 4 result — the money math, taken out of order
+
+Slice 3 needs a real phone to prove, so slice 4 ran first. Pure logic, fully
+verifiable here, and it completes the correctness core.
+
+`npx tsc --noEmit` 0 errors. `npx vitest run` 29/29 across three files.
+
+**One model covers both ways people eat.** Every item carries a set of people
+sharing it — one name is a dish that is yours, several is family style, empty is
+the whole table. No mode switch, because a real table is both at once. This is
+the union Dylan asked for rather than either option originally offered.
+
+**Invariant 3 is now enforced by construction, not by hope.** Largest-remainder
+apportionment: floor every share, then hand the leftover pennies to whoever was
+rounded down hardest. Three people splitting $7.00 get 2.34 / 2.33 / 2.33, never
+$6.99 or $7.02. Ties break toward the earlier index so the same bill always
+splits the same way. Proven over 20,000 random apportionments and 5,000 random
+whole bills, every one summing exactly.
+
+**Tax and tip follow subtotal share, not head count** — the salad does not
+subsidise the steak's tax.
+
+**splitBill refuses rather than approximates.** If the line items disagree with
+the subtotal, or the bill does not balance, it throws instead of returning a
+plausible number. `splitEvenly` is the honest fallback when only the total could
+be read.
