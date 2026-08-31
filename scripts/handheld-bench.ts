@@ -86,13 +86,15 @@ async function main(): Promise<void> {
   await engine.init();
 
   console.log(`\n${FRAMES} simulated hand-held frames per receipt\n`);
-  console.log('  receipt   single-frame            confirmation streak');
-  console.log('  ' + '─'.repeat(68));
+  console.log('  receipt   single frame     streak only      single-then-streak');
+  console.log('  ' + '─'.repeat(74));
 
   let singleOk = 0;
   let singleWrong = 0;
   let streakOk = 0;
   let streakWrong = 0;
+  let bothOk = 0;
+  let bothWrong = 0;
 
   for (const testCase of CASES) {
     const rand = rng(20260831);
@@ -104,6 +106,13 @@ async function main(): Promise<void> {
     const H = baseMeta.height ?? 0;
     let firstSingle = '';
     let settled = '';
+    /**
+     * The combination. A frame that reconciles ON ITS OWN is already backed by
+     * the receipt's own arithmetic — the check a barcode never had — so there is
+     * nothing for a second frame to add. Only when no single frame settles does
+     * the accumulated view earn its keep, filling a field one pose lost.
+     */
+    let combined = '';
 
     for (let n = 1; n <= FRAMES; n++) {
       const { words } = await engine.recognize(await frame(base, W, H, rand));
@@ -118,23 +127,36 @@ async function main(): Promise<void> {
       }
 
       consensus.observe(parsed);
-      if (settled) continue;
-      const agreed = reconcile(consensus.asParsed(parsed));
-      if (agreed.status !== 'unresolved') {
-        settled = matches(agreed.values, testCase.truth)
-          ? `CORRECT at frame ${n}`
-          : `WRONG at frame ${n} (${formatCents(agreed.values.total ?? 0)})`;
-        if (settled.startsWith('CORRECT')) streakOk++; else streakWrong++;
+
+      if (!settled) {
+        const agreed = reconcile(consensus.asParsed(parsed));
+        if (agreed.status !== 'unresolved') {
+          settled = matches(agreed.values, testCase.truth) ? `CORRECT f${n}` : `WRONG f${n}`;
+          if (settled.startsWith('CORRECT')) streakOk++; else streakWrong++;
+        }
+      }
+
+      if (!combined) {
+        const winner =
+          alone.status !== 'unresolved' ? alone : reconcile(consensus.asParsed(parsed));
+        if (winner.status !== 'unresolved') {
+          combined = matches(winner.values, testCase.truth) ? `CORRECT f${n}` : `WRONG f${n}`;
+          if (combined.startsWith('CORRECT')) bothOk++; else bothWrong++;
+        }
       }
     }
 
-    console.log(`  ${testCase.name.padEnd(9)} ${(firstSingle || 'refused').padEnd(23)} ${settled || 'refused'}`);
+    console.log(
+      `  ${testCase.name.padEnd(9)} ${(firstSingle || 'refused').padEnd(16)} ` +
+        `${(settled || 'refused').padEnd(16)} ${combined || 'refused'}`,
+    );
   }
 
   await engine.dispose();
   console.log('\n  ' + '─'.repeat(68));
-  console.log(`  single frame        correct ${singleOk}/${CASES.length}   WRONG ${singleWrong}`);
-  console.log(`  confirmation streak correct ${streakOk}/${CASES.length}   WRONG ${streakWrong}`);
+  console.log(`  single frame only    correct ${singleOk}/${CASES.length}   WRONG ${singleWrong}`);
+  console.log(`  streak only          correct ${streakOk}/${CASES.length}   WRONG ${streakWrong}`);
+  console.log(`  single-then-streak   correct ${bothOk}/${CASES.length}   WRONG ${bothWrong}`);
 }
 
 main().catch((err) => {
