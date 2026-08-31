@@ -40,11 +40,41 @@ const LABELS: [FieldName, RegExp][] = [
 ];
 
 /**
- * Anchored forms of the same labels, used only to locate where the totals block
- * begins. Anchored because this decides what counts as a line item at all, and
- * an unanchored TIP would match a dish called "TIP TOP BURGER".
+ * Labels that mark where the totals block begins.
+ *
+ * NOT anchored to the start of the row. On a real photograph the receipt is a
+ * bright rectangle inside a darker scene, and OCR reads the surroundings too —
+ * a real Thai Duong receipt produced the row `RE | Subtotal $60.80`, where the
+ * `RE |` is a table edge. Anchoring to `^` meant the totals block was never
+ * located, so the rows below it stayed eligible as line items and a row whose
+ * "Total" label OCR had lost entirely became a $77.34 dish.
+ *
+ * Still bounded rather than free: the label must appear near the START of the
+ * row (see LABEL_LEAD). A dish called "TIP TOP BURGER" must not be mistaken for
+ * the totals block, because everything after the block is discarded and a false
+ * positive high on the receipt would throw away the whole meal.
  */
-const BLOCK_START = /^(SUB\s?-?\s?TOTAL|SUBTTL|TAX|VAT|GST|HST|GRAND\s?TOTAL|TOTAL|BALANCE|AMOUNT\s?DUE)\b/;
+const BLOCK_START = /(^|[^A-Z])(SUB\s?-?\s?TOTAL|SUBTTL|GRAND\s?TOTAL|TOTAL|BALANCE(\s?DUE)?|AMOUNT\s?DUE)\b/;
+
+/** How much leading noise may precede a totals label. Roughly two short words. */
+const LABEL_LEAD = 14;
+
+/**
+ * True when the row opens the totals block.
+ *
+ * Only the long, distinctive labels count. TAX, VAT and GST were tried and
+ * removed: three characters match OCR noise far too readily, and a false
+ * positive here is expensive because everything below the boundary is
+ * discarded — on a folded fixture a spurious TAX cost the receipt its last
+ * line item and broke a bill that had previously reconciled.
+ *
+ * A genuine totals row also states a number, so one is required.
+ */
+function opensTotalsBlock(row: Row, hasPrice: boolean): boolean {
+  if (!hasPrice) return false;
+  const match = BLOCK_START.exec(row.text.toUpperCase().trim());
+  return match !== null && match.index <= LABEL_LEAD;
+}
 
 /** Rows that carry a price but are not part of the bill's arithmetic. */
 const PAYMENT = /\b(CASH|CHANGE|VISA|MASTERCARD|MC|AMEX|DEBIT|CREDIT|CARD|TENDER|AUTH|APPROVED|REF|ACCT)\b/;
@@ -121,7 +151,9 @@ export function parseReceipt(words: Word[]): ParsedReceipt {
    * the SUBTOTAL line's own value was unreadable, and it is the label that
    * marks the boundary.
    */
-  const totalsBlockStart = rows.findIndex((row) => BLOCK_START.test(row.text.toUpperCase().trim()));
+  const totalsBlockStart = rows.findIndex((row) =>
+    opensTotalsBlock(row, priceOf(row, priceColumnX, tolerance) !== null),
+  );
 
   rows.forEach((row, rowIndex) => {
     if (DIVIDER.test(row.text)) return;

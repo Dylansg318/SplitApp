@@ -185,7 +185,29 @@ function blur(img: Gray, sigma: number): Gray {
   return { data: out, width, height };
 }
 
+/**
+ * Width the sharpen radius was tuned against. A blur radius is only meaningful
+ * relative to stroke width, and a phone photograph is four times this wide, so
+ * a fixed sigma barely touches its strokes. Scaling with the image is what made
+ * a real 4032px receipt parse its subtotal, tax and tip correctly.
+ */
+const REFERENCE_WIDTH = 900;
+const REFERENCE_SIGMA = 1.5;
+
+/**
+ * Scales UP with image width and never below the tuned baseline.
+ *
+ * Letting it scale down as well cost the synthetic set two receipts (32/40 ->
+ * 30/40): those fixtures sit at or below the reference width, so scaling only
+ * ever weakened them. The measured problem is the opposite one — a 4032px
+ * photograph whose strokes are four times wider than anything this was tuned
+ * against, where a fixed 1.5 barely touches them.
+ */
+export const sigmaFor = (width: number): number =>
+  Math.min(6, Math.max(REFERENCE_SIGMA, (width / REFERENCE_WIDTH) * REFERENCE_SIGMA));
+
 export interface SharpenOptions {
+  /** Omit to scale with image width, which is almost always what you want. */
   sigma?: number;
   /** Slope applied below the threshold — gentle, so paper grain stays quiet. */
   flatSlope?: number;
@@ -221,7 +243,7 @@ export interface SharpenOptions {
  */
 export function unsharp(img: Gray, options: SharpenOptions = {}): Gray {
   const {
-    sigma = 1.5,
+    sigma = sigmaFor(img.width),
     flatSlope = 1,
     // 1.5 rather than libvips' 2.0. Swept end-to-end over all 40 fixtures by
     // receipts actually settled, not by character recall: 1.5 settles 33,

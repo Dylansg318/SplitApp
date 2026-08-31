@@ -342,3 +342,76 @@ passing rather than silently absorbing the win. `brunch-worn` replaces it:
 sharpening costs that fixture one line item, so the items stop matching the
 subtotal and the bill is correctly refused. A capability loss, not a safety one,
 against dim receipts going 0% -> 80%.
+
+## REAL PHOTOGRAPHS — the synthetic score does not transfer
+
+Dylan supplied 13 photographs of real receipts. **1 of 13 parses correctly.**
+The synthetic set scores 30/40. That gap is the whole finding, and it is the
+reason real photographs were named as the gate from the beginning.
+
+| outcome | n |
+|---|---|
+| correct | 1 (Thai Duong: sub 60.80, tax 3.65, tip 12.89, total 77.34 — exact) |
+| settled on a non-receipt | 1 (an end-of-day POS sales report) |
+| refused safely | 11 |
+
+**No wrong answer was produced on any actual receipt.** The safety property
+holds where it matters, and the honest headline is that capability is close to
+zero on real input.
+
+### Why real photographs are a different problem
+
+1. **The receipt is ~30% of the frame.** Everything else — table, card reader,
+   neighbouring papers, a menu — is OCR'd too. A real row came back as
+   `RE | Subtotal $60.80`, where `RE |` is a table edge, and another as
+   `CL RE eI RE a $77.34`, which is the word "Total" destroyed. Cropping to the
+   paper cut one receipt from 311 words to 103 and recovered a tax line, so it
+   helps materially, but on its own it did not settle either receipt tried.
+2. **Decimal points are the fragile character.** `$23.00` read as `$2300`,
+   `3.75` as `35`. parseCents refuses both, which is right — they never become
+   money the app would spend — but the field is then simply lost.
+3. **Price columns are not always aligned with their descriptions.** One QUI
+   receipt prints prices offset roughly half a line above the dish they belong
+   to, so geometric pairing attaches every price to the wrong item.
+4. **Number-dense documents can balance by coincidence.** The POS sales report
+   carries ~60 money values; three of them summed correctly and the bill
+   settled. With enough candidates, `subtotal + tax + tip == total` stops being
+   strong evidence on its own.
+
+### Two changes, both measured
+
+- **Totals-block detection is no longer `^`-anchored**, because real rows carry
+  leading debris. Restricted to the long labels only: TAX, VAT and GST were
+  tried and removed, since three characters match OCR noise readily and a false
+  boundary discards every item below it. A totals row must also state a price.
+- **Sharpen sigma scales with image width**, floored at the tuned baseline. A
+  blur radius only means something relative to stroke width, and a 4032px
+  photograph is four times wider than anything this was tuned against. Letting
+  it scale DOWN as well cost the synthetic set two receipts, so it only ever
+  scales up.
+
+Together these took real receipts 0/13 -> 1/13 and synthetic 32/40 -> 30/40.
+
+`taqueria-folded` is pinned again, with the cause now known exactly: the fold
+shadow eats the decimal in `3.75`, OCR returns `35`, and the item loses its
+price. It has flipped twice in a day; it is marginal and is pinned rather than
+tuned for.
+
+### What this implies for the plan
+
+Cropping the receipt out of the photograph is the missing stage, and it belongs
+in slice 3b rather than as an afterthought — the capture UI's guide frame solves
+detection and orientation at source, which is what a guide frame is FOR. Photos
+chosen from the library still need real detection.
+
+Not attempted, and worth considering before more parser tuning: multi-frame
+consensus from the live camera, which was always in the design and directly
+attacks the lost-decimal failure, since a decimal point missed in one frame is
+usually present in another.
+
+### These photographs must not be committed
+
+Several are merchant card slips carrying third-party customer names and
+signatures. They are other people's data and must not enter a public repository,
+whatever the licence position on the images themselves. Only itemised food
+receipts with no personal details should become fixtures.
