@@ -61,7 +61,7 @@ API keys, no network after first load. Confidence comes from arithmetic, not fro
 
 - [x] 1. Move Java to `legacy-java/`; Vite+Preact+TS app at root; Tesseract behind `OcrEngine`; bake-off harness   DONE ed4b007
 - [x] 2. Geometric parser (row clustering, price column) + reconciliation engine                                   DONE eea7eff
-- [ ] 3a. Preprocessing (CLAHE + sharpen) on the OCR path — PULLED FORWARD, no device needed                       TODO
+- [x] 3a. Preprocessing on the OCR path — shipped as sharpen-only; CLAHE measured worse                            DONE
 - [ ] 3b. Camera capture: rear cam, guide frame, multi-frame voting                                                 TODO (needs a device)
 - [x] 4. Split model: assignee sets, family-style default, proportional tax/tip, exact penny rounding              DONE a4d219b
 - [ ] 5. Mobile UI: item list, tap-to-assign, inline number editing, reconciliation banner                         TODO
@@ -258,3 +258,87 @@ Answering *wrongly* is different, and is what invariant 2 forbids.
   excluded, so a change in either direction is noticed.
 
 `npx vitest run` 30/30.
+
+## Slice 3a result — preprocessing, and a safety bug it exposed
+
+`npx tsc --noEmit` 0 errors. `npx vitest run` 42/42. Bake-off headline
+**26/40 -> 32/40**, total-field recall 74% -> 91%. Per variant, dim went 0% ->
+80% and handheld 80% -> 100%.
+
+### It shipped as sharpen-only, and CLAHE is off
+
+The hypothesis from the earlier experiment was CLAHE + sharpen at 85%. Measuring
+the two separately with a browser-bound implementation says otherwise:
+
+| | CLAHE only | sharpen only | both |
+|---|---|---|---|
+| sharp (native) | 52% | 80% | 85% |
+| ours (ships) | **62%** | **85%** | 53% |
+
+Our CLAHE is better than sharp's and our sharpen is better than sharp's, but
+stacking them is worse than either. Both operations amplify grain; doing both
+amplifies it twice, and the second pass costs more in false strokes than the
+first gains in contrast. Swept eight CLAHE settings (clip 1-3 x tile 64/128) and
+sharpening alone beat all of them. CLAHE is kept, off by default, as a pending
+experiment against real photographs — where the noise is not synthetic gaussian
+and the illumination is genuinely non-uniform. If that experiment does not
+happen, delete it.
+
+Two implementation details carried most of the value, and getting either wrong
+cost ~35 points of recall:
+
+1. **The sharpen response must be continuous.** Switching multiplier on the
+   whole difference at the threshold puts a step in the response curve, and a
+   step in a sharpening operator manufactures the very artefacts the threshold
+   exists to prevent. The steep slope applies to the EXCESS above the threshold.
+2. **libvips works in LAB, where L is 0-100.** Its documented caps of 10 and 20
+   are ~25 and ~51 levels on a 0-255 channel. Reading them as raw levels clamps
+   twice as hard as intended and discards most of the sharpening.
+
+Strength was then swept end-to-end over all 40 fixtures by receipts actually
+settled rather than by character recall: edgeSlope 1.5 settles 33, 2.0 and 2.5
+settle 32, no sharpening settles 26. **No setting, at any strength, ever
+produced a wrong answer.**
+
+### A confidently wrong bill, and the structural fix
+
+Preprocessing raised recall and immediately broke the safety property. On
+`sushi-dim`:
+
+```
+claimed:  subtotal 70.51  tax 4.18  tip 0      -> 74.69  balances
+truth:    subtotal 59.75  tax 4.18  tip 10.76  -> 74.69  balances
+```
+
+Mechanism: OCR read `SUBTOTAL 59.75` as `59475`, which parseCents correctly
+refused, leaving the subtotal unknown. It also read `TIP 10.76` as `SNIP 10.76`,
+which matched no label and so became a LINE ITEM. The tip was thereby absorbed
+into the item sum, that sum stood in for the missing subtotal, and
+subtotal + tax then equalled the printed total exactly — so the "no tip printed"
+rule fired and produced a wrong bill that balances perfectly.
+
+Nothing in the arithmetic can catch this: adding the tip to the subtotal is
+exactly what the equations expect. The first attempted fix — requiring line
+items to corroborate the subtotal — could not fire either, because the subtotal
+had been *derived from* those items and cannot contradict itself.
+
+**The fix is structural, not arithmetic.** Receipts are ordered: line items,
+then the totals block. A priced row at or after the first SUBTOTAL/TAX/TOTAL
+label is a misread label or a payment line, never a dish. The block boundary is
+detected from row TEXT rather than a parsed price, because on this very receipt
+the SUBTOTAL line's own value was unreadable and only its label survived.
+
+Both defences are kept: item corroboration now also gates the tip-zero
+inference, the single-missing-field derivation, and the repair search.
+`ParsedReceipt.unreadable` additionally records fields whose label was found but
+whose value would not parse — "we could not read this" is a different and more
+honest message than "the receipt does not state it".
+
+### The known-failure list caught an improvement
+
+`taqueria-folded` was pinned as unreadable because a fold shadow buried its TAX
+and TIP labels. Sharpening recovers them, and the list flagged it as newly
+passing rather than silently absorbing the win. `brunch-worn` replaces it:
+sharpening costs that fixture one line item, so the items stop matching the
+subtotal and the bill is correctly refused. A capability loss, not a safety one,
+against dim receipts going 0% -> 80%.

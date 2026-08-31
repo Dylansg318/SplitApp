@@ -12,6 +12,7 @@ function parsed(
     items: items.map(([desc, price], rowIndex): LineItem => ({ desc, price, rowIndex })),
     fields: { subtotal: null, tax: null, tip: null, total: null, ...fields },
     fieldRows: {},
+    unreadable: [],
     rows: [],
     priceColumnX: null,
   };

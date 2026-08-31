@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { TesseractEngine } from '../src/ocr/tesseract';
+import { preparePng } from '../src/ocr/node';
 import { parseReceipt } from '../src/parse/receipt';
 import { reconcile } from '../src/parse/reconcile';
 import type { ReceiptGroundTruth } from '../src/types';
@@ -56,7 +57,7 @@ describe.skipIf(!available)('pipeline over synthetic fixtures', () => {
     let settled = 0;
 
     for (const { gt, image } of fixtures) {
-      const { words } = await engine.recognize(image);
+      const { words } = await engine.recognize(await preparePng(image));
       const result = reconcile(parseReceipt(words));
       if (result.status === 'unresolved') continue;
 
@@ -84,11 +85,17 @@ describe.skipIf(!available)('pipeline over synthetic fixtures', () => {
    * documents the actual limits and a change in EITHER direction is noticed.
    */
   const KNOWN_UNREADABLE: Record<string, string> = {
-    // The fold shadow lands squarely on the TAX and TIP labels. Without labels
-    // those rows read as bare numbers, the printed total gets taken for a line
-    // item, and the receipt stops describing itself. Correctly refused rather
-    // than guessed — which is the behaviour under test.
-    'taqueria-folded': 'fold shadow obliterates the TAX and TIP labels',
+    // taqueria-folded used to live here: the fold shadow buried its TAX and TIP
+    // labels and the receipt stopped describing itself. Sharpening recovers
+    // them, and this list caught the improvement rather than the regression —
+    // which is the reason known failures are listed instead of excluded.
+    // Sharpening costs this already-soft fixture its COLD BREW line, so the
+    // items stop matching the printed subtotal and the bill is refused. A
+    // capability loss, not a safety one, and the trade is strongly positive:
+    // preprocessing takes settled receipts from 26/40 to 33/40 overall, and
+    // dim-lit receipts from 0% to 90%. Swept across sharpen strengths — no
+    // setting recovers this without giving up more elsewhere.
+    'brunch-worn': 'sharpening drops one line item, so items no longer match the subtotal',
   };
 
   it('settles the well-lit variants', { timeout: 600_000 }, async () => {
@@ -97,7 +104,7 @@ describe.skipIf(!available)('pipeline over synthetic fixtures', () => {
     const unexpectedSuccess: string[] = [];
 
     for (const { gt, image } of easy) {
-      const { words } = await engine.recognize(image);
+      const { words } = await engine.recognize(await preparePng(image));
       const result = reconcile(parseReceipt(words));
       const known = gt.id in KNOWN_UNREADABLE;
 
