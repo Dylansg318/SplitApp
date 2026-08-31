@@ -15,7 +15,8 @@
     "test": "vitest run",
     "fixtures": "tsx scripts/make-fixtures.ts",
     "bakeoff": "tsx scripts/bakeoff.ts",
-    "bench:preprocess": "tsx scripts/preprocess-bench.ts"
+    "bench:preprocess": "tsx scripts/preprocess-bench.ts",
+    "try": "tsx scripts/try.ts"
   },
   "dependencies": {
     "preact": "^10.29.8",
