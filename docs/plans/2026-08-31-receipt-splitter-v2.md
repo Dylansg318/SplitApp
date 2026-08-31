@@ -1,0 +1,100 @@
+# Receipt Splitter v2 — replace the model with a proof
+<!-- Decision record + scope ledger + verification contract. Slice detail added JIT. -->
+
+## Decision
+
+**Problem:** Splitting a restaurant bill is arithmetic nobody wants to do at the table. v1
+(Java, Feb 2025) reached for an LLM and failed at the step *before* the LLM — reading crumpled
+thermal paper — then presented whatever it got back with no way to tell right from wrong.
+
+**Approach:** A static, offline-capable web app. Camera → multi-frame capture → on-device
+Tesseract OCR → geometric parse (cluster words into rows by y, find the right-aligned price
+column by x) → **reconcile against the receipt's own printed subtotal/tax/tip/total** → mobile
+assignment UI → proportional tax and tip → share via URL fragment. No backend, no accounts, no
+API keys, no network after first load. Confidence comes from arithmetic, not from a model.
+
+**Rejected:**
+- **LLM parsing** — the thing being removed. Unauditable, costs money, hallucinates totals.
+- **Cloud OCR (Vision/Textract)** — accurate and not an LLM, but reintroduces the bill, the key,
+  the backend, and the privacy loss. Fails the whole premise.
+- **PaddleOCR / PP-OCRv5 primary** — ~99.2% char accuracy on receipts vs Tesseract's, but
+  onnxruntime-web is unsafe on iPhone today: WebGPU only landed in iOS 26, ORT issue #26827 has
+  Safari pinning 400% CPU and climbing past 14GB RAM, and the WASM fallback OOMs on iPhone.
+  Wrong risk profile for a tool used at a dinner table. Engine sits behind an interface so this
+  is a later drop-in, gated on slice 2's measured reconcile rate.
+- **Astro island lane for the portfolio demo** — a ~10MB WASM OCR bundle must not enter the
+  site's build graph. `Demo.astro`'s iframe lane exists for exactly this.
+- **A backend for sharing** — unnecessary. A URL fragment never reaches a server, so sharing
+  works with zero infrastructure and the privacy invariant survives.
+- **Standalone-mode PWA on iOS** — WebKit bug 185448: getUserMedia is broken in standalone and
+  the permission grant isn't persisted. Ship without `apple-mobile-web-app-capable` so the
+  home-screen icon opens in Safari, where the camera works. Android installs fully.
+
+**Invariants that must hold:**
+1. **Nothing leaves the device.** Zero network calls after first load. Product promise, not a detail.
+2. **Never display a split that doesn't reconcile.** If assigned ≠ printed total, say so and
+   highlight the suspect fields. (v1's write-up names this as its own biggest flaw.)
+3. **Allocations sum to the total exactly.** Penny rounding distributes remainders; never invent
+   or lose a cent. Property-tested, not eyeballed.
+4. **Every OCR'd number is editable in one tap.** OCR is a first draft, never the last word.
+5. **Assignment moves money, never creates it.** Items default to shared-by-everyone, so the
+   bill reconciles from first render and tapping only redistributes.
+6. **Deterministic.** Same photo → same parse, every time.
+7. **The portfolio embed and the real app are the same build.** The demo cannot drift from the tool.
+8. Portfolio rules stand: demo lane contract per `Demo.astro`; content schema per `content.config.ts`.
+9. Dylan's rules stand: stage/commit by explicit path, one push per task, drafts for approval.
+
+## Verification contract
+
+| # | Slice | Proof command | Expected observable |
+|---|---|---|---|
+| 1 | Scaffold + OCR harness | `npm run typecheck && npm run bakeoff` | 0 errors; per-receipt char accuracy + price recall printed for every fixture |
+| 2 | Geometric parser + reconcile | `npm test -- parser` | All fixtures parse; reconcile rate reported; ≥1 known-bad receipt correctly flagged as NOT reconciling |
+| 3 | Capture + multi-frame vote | `npm test -- capture` + live phone check | Voting beats single-frame accuracy on burst fixtures; rear camera opens on a real phone |
+| 4 | Split model + money math | `npm test -- split` | All pass incl. property test: allocations sum to total across 10k random bills, zero drift |
+| 5 | Mobile UI | `npm run typecheck && npm test -- ui` + live phone check | 0 errors; assign/edit/reconcile-banner work by hand on a phone |
+| 6 | Persistence + share | `npm test -- share` | encode→decode round-trips identically; state survives reload |
+| 7 | PWA shell | `npm run build` + airplane-mode load | Loads and OCRs a fixture with networking off; no `apple-mobile-web-app-capable` in output |
+| 8 | Portfolio embed | `npm run check && npm run build` *(in Portfolio)* | 0 errors; demo renders and runs in the iframe lane |
+
+## Scope ledger
+
+- [ ] 1. Move Java to `legacy-java/`; Vite+Preact+TS app at root; Tesseract behind `OcrEngine`; bake-off harness   TODO
+- [ ] 2. Geometric parser (row clustering, price column) + reconciliation engine                                   TODO
+- [ ] 3. Camera capture: rear cam, guide frame, multi-frame voting, preprocess (grey/deskew/threshold)             TODO
+- [ ] 4. Split model: assignee sets, family-style default, proportional tax/tip, exact penny rounding              TODO
+- [ ] 5. Mobile UI: item list, tap-to-assign, inline number editing, reconciliation banner                         TODO
+- [ ] 6. Persistence (IndexedDB) + URL-fragment share + share image via Web Share API                              TODO
+- [ ] 7. PWA shell: manifest, service worker, offline model cache, iOS-safe (no standalone)                        TODO
+- [ ] 8. Portfolio embed via iframe lane + rewrite `receipt-splitter/index.mdx` (status, AI claims)                 TODO
+
+## Slice detail — slice 1 only
+
+### Slice 1: Scaffold, OCR harness, and an honest measurement
+
+**Files:** `legacy-java/**` (moved), `package.json`, `vite.config.ts`, `tsconfig.json`,
+`src/ocr/engine.ts`, `src/ocr/tesseract.ts`, `scripts/bakeoff.ts`, `fixtures/receipts/**`
+
+**Change:**
+- `git mv` pom.xml, mvnw, mvnw.cmd, .mvn, src → `legacy-java/`. Java stays runnable; the web app
+  becomes the repo's primary artifact.
+- Vite + Preact + TypeScript at root. Strict mode on.
+- `OcrEngine` interface: `recognize(img) => Promise<Word[]>` where
+  `Word = { text, bbox: {x0,y0,x1,y1}, confidence }`. Tesseract.js v7 is the first
+  implementation — it must be swappable without touching the parser.
+- Tesseract.js needs non-text output explicitly enabled (v6+ disables all but `text` by default);
+  we need word-level boxes or the geometric parser in slice 2 has nothing to work with.
+- Two fixture sets: **synthetic** thermal-style receipts rendered to PNG with exact ground-truth
+  JSON (repeatable regression), and **real** photos from Dylan's wallet (honest about folds,
+  fade, stains). Real receipts are the test set — that is v1's own stated lesson.
+- `scripts/bakeoff.ts`: run every fixture through the engine, report character accuracy and
+  price-token recall per receipt and in aggregate.
+
+**Proves it:** `npm run typecheck && npm run bakeoff` → 0 type errors and a per-fixture table.
+The aggregate price-token recall is the number that decides slice 2's design: if Tesseract
+recovers prices reliably, geometric parsing is enough; if not, the PaddleOCR interface swap
+gets pulled forward from "rejected" to slice 2a.
+
+**Blocked on Dylan for:** ~10 real receipt photos. Synthetic fixtures unblock everything else,
+so this does not stall the slice — but the go/no-go on the engine is not real until the real
+photos are in.
