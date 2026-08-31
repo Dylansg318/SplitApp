@@ -59,7 +59,7 @@ API keys, no network after first load. Confidence comes from arithmetic, not fro
 
 ## Scope ledger
 
-- [ ] 1. Move Java to `legacy-java/`; Vite+Preact+TS app at root; Tesseract behind `OcrEngine`; bake-off harness   TODO
+- [x] 1. Move Java to `legacy-java/`; Vite+Preact+TS app at root; Tesseract behind `OcrEngine`; bake-off harness   DONE
 - [ ] 2. Geometric parser (row clustering, price column) + reconciliation engine                                   TODO
 - [ ] 3. Camera capture: rear cam, guide frame, multi-frame voting, preprocess (grey/deskew/threshold)             TODO
 - [ ] 4. Split model: assignee sets, family-style default, proportional tax/tip, exact penny rounding              TODO
@@ -98,3 +98,43 @@ gets pulled forward from "rejected" to slice 2a.
 **Blocked on Dylan for:** ~10 real receipt photos. Synthetic fixtures unblock everything else,
 so this does not stall the slice — but the go/no-go on the engine is not real until the real
 photos are in.
+
+## Slice 1 result — measured, not assumed
+
+`npm run typecheck` clean. `npm run fixtures && npm run bakeoff` over 20 synthetic
+fixtures (5 receipts x clean/faded/skewed/worn):
+
+| metric | result |
+|---|---|
+| Receipts with all four totals intact | 19/20 (95%) |
+| Total-field recall (subtotal/tax/tip/total) | 99% |
+| Line-item price recall | 100% |
+| Character accuracy | 100% |
+
+**Engine decision: Tesseract stays.** PaddleOCR is not pulled forward. Nothing here
+argues the engine is the bottleneck.
+
+**Two honest caveats.**
+
+1. These fixtures are too easy. 100% item recall on the "worn" variant is not a
+   result a real thermal receipt will reproduce. Synthetic is the regression
+   suite; `fixtures/receipts/real/` is the evidence, and it is still empty.
+2. The char-accuracy metric was wrong on first run — it scored a flawless read at
+   70% because it counted the dashed divider rows, which OCR correctly ignores, as
+   missed characters. Fixed by excluding dividers from `fullText`. Worth recording
+   because it is the exact failure this project exists to prevent: a plausible
+   number that is silently meaningless.
+
+**`taqueria-faded` is now a required regression case.** Fade caused a misread:
+
+```
+TRUE:  TAX 1.69
+OCR:   TAX 19.169
+```
+
+Subtotal (17.75), tip (2.66) and total (22.10) all read correctly, so the receipt
+fails its own arithmetic: 17.75 + 19.169 + 2.66 = 39.58, not 22.10. This validates
+invariant 2 against a real misread rather than a hypothetical, and it sets slice 2's
+bar higher than flagging: with exactly one bad field among four, the reconciler can
+SOLVE for it — 22.10 - 17.75 - 2.66 = 1.69, the true value. Detect, then repair,
+then ask the user to confirm the repair.

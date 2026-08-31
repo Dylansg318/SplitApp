@@ -1,6 +1,6 @@
 target/
 # Script-only wrapper: mvnw re-downloads this on demand, so it is not source.
-.mvn/wrapper/maven-wrapper.jar
+**/.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
@@ -37,3 +37,9 @@ build/
 
 ### Mac OS ###
 .DS_Store
+### Node / web app (v2) ###
+node_modules/
+dist/
+.vite/
+fixtures/receipts/synthetic/
+*.local
