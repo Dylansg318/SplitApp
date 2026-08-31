@@ -415,3 +415,57 @@ Several are merchant card slips carrying third-party customer names and
 signatures. They are other people's data and must not enter a public repository,
 whatever the licence position on the images themselves. Only itemised food
 receipts with no personal details should become fixtures.
+
+## Multi-frame confirmation — ported from MHLHUB's barcode scanner
+
+Dylan's call, and the right one: MHLHUB's `<CameraScanner>` already solved this
+in a smaller shape, and its policy is measured rather than assumed. Over 220
+simulated hand-held sessions on a genuinely degraded barcode:
+
+| accept policy | accepted | WRONG |
+|---|---|---|
+| first frame wins | 154/220 | 9 (5.8% of accepted) |
+| 2 frames in a row | 125/220 | 1 (0.8%) |
+| 3 frames in a row | 108/220 | 0 (0.0%) |
+
+The premise, in that file's words: **a drifting hand cannot repeat a wrong
+read.** A false decode is an artefact of one pose — glare sitting just so, a
+fold catching the light at one angle. Move a few millimetres and the artefact is
+gone while the true value remains. Back-to-back agreement separates the two in a
+way no single frame can and no confidence score even attempts.
+
+That is exactly our lost-decimal failure: `3.75` read as `35`, `$23.00` as
+`$2300`. A decimal missed at one angle is usually present at another.
+
+### Four rules carried over verbatim, each paid for in measurement
+
+1. **Consecutive, not tallied.** A running vote lets a value seen once in ten
+   frames win a plurality. The claim being tested is that a wrong read cannot
+   survive the hand moving.
+2. **A blank frame breaks the streak.** MHLHUB measured the lenient variant
+   (blanks ignored): accepts ~10% more, leaves 1.5% wrong.
+3. **The wider the candidate set, the more confirmation it needs.** There, a
+   format allow-list; here, money-token density. The till report that settled by
+   coincidence carried ~60 amounts — such a page now pays a third frame.
+4. **Do not sample too fast.** Adjacent frames become more alike, weakening the
+   independence the whole thing rests on. MHLHUB deliberately runs 60ms rather
+   than 40ms. OCR at 200ms-2s per frame gives us this free; do not optimise it
+   away.
+
+### What differs, and why it is stronger here
+
+A barcode is one atomic payload; a receipt is a dozen numbers failing
+independently, and demanding the whole receipt repeat exactly would almost never
+fire. So each field keeps its own streak — and the reconciler still has to agree
+afterwards. That is a second, independent check a barcode never had: a value
+must both survive the hand moving AND make the receipt add up.
+
+### Memory discipline, also borrowed
+
+MHLHUB pins Jest to `maxWorkers: 2` (1 for DB suites) with
+`workerIdleMemoryLimit: '1KB'` after exhausting memory on this machine, and its
+note is the right framing: pinning **makes the blast radius a decision instead
+of a default**. It matters more here — every tesseract.js worker holds its own
+WASM engine plus ~15MB of language data. The bake-off pool drops from 4 to 2
+(`BAKEOFF_WORKERS` to override) and `vitest.config.ts` pins `maxWorkers: 2`
+rather than taking a pool sized to the CPU count.

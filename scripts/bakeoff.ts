@@ -20,7 +20,13 @@ import type { ReceiptGroundTruth, Word, Cents } from '../src/types';
 import { parseCents } from '../src/types';
 
 const ROOT = join(import.meta.dirname, '..', 'fixtures', 'receipts');
-const POOL_SIZE = 4;
+/**
+ * Parallel OCR engines. Two, not one-per-core: each worker holds its own WASM
+ * engine and ~15MB of language data, and MHLHUB's Jest suites exhausted memory
+ * on this machine by taking the default. Override deliberately when the machine
+ * has room — the point is that the number is a decision.
+ */
+const POOL_SIZE = Number(process.env.BAKEOFF_WORKERS || 2);
 /** `npm run bakeoff -- --raw` measures without preprocessing, for comparison. */
 const PREPROCESS = !process.argv.includes('--raw');
 
