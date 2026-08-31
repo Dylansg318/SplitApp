@@ -61,7 +61,8 @@ API keys, no network after first load. Confidence comes from arithmetic, not fro
 
 - [x] 1. Move Java to `legacy-java/`; Vite+Preact+TS app at root; Tesseract behind `OcrEngine`; bake-off harness   DONE ed4b007
 - [x] 2. Geometric parser (row clustering, price column) + reconciliation engine                                   DONE eea7eff
-- [ ] 3. Camera capture: rear cam, guide frame, multi-frame voting, preprocess (grey/deskew/threshold)             TODO (needs a device)
+- [ ] 3a. Preprocessing (CLAHE + sharpen) on the OCR path — PULLED FORWARD, no device needed                       TODO
+- [ ] 3b. Camera capture: rear cam, guide frame, multi-frame voting                                                 TODO (needs a device)
 - [x] 4. Split model: assignee sets, family-style default, proportional tax/tip, exact penny rounding              DONE a4d219b
 - [ ] 5. Mobile UI: item list, tap-to-assign, inline number editing, reconciliation banner                         TODO
 - [ ] 6. Persistence (IndexedDB) + URL-fragment share + share image via Web Share API                              TODO
@@ -198,3 +199,62 @@ subsidise the steak's tax.
 the subtotal, or the bill does not balance, it throws instead of returning a
 plausible number. `splitEvenly` is the honest fallback when only the total could
 be read.
+
+## Correction — the fixtures were too easy, and the 95% was not real
+
+Dylan asked whether any realistic photographs had been used. They had not: every
+fixture was generated, crisp, flat-on and evenly lit. The reported 95% was a
+measurement of the generator, not of the system.
+
+Four photographic variants added — `handheld`, `folded`, `dim`, `defocused` —
+with off-axis geometry, uneven illumination, fold shadows, gaussian sensor
+grain, JPEG loss and reduced resolution. 40 fixtures now.
+
+**The honest number is 65%, not 95%.**
+
+| variant | totals intact |
+|---|---|
+| clean / skewed / worn / folded | 100% |
+| faded | 95% |
+| handheld — an ordinary phone snap | 80% |
+| defocused | 20% |
+| dim — restaurant lighting | 0% |
+
+### The most valuable result so far: preprocessing is load-bearing
+
+Measured over the 15 hard fixtures, total-field recall by preprocessing recipe:
+
+| recipe | recall |
+|---|---|
+| raw | 33% |
+| `normalize` | 32% — no help at all |
+| CLAHE | 52% |
+| **CLAHE + sharpen** | **85%** |
+| upscale + CLAHE + sharpen | 50% — upscaling actively hurts |
+
+Contrast-limited adaptive histogram equalisation plus a sharpen is a 2.6x
+improvement for about two lines of processing. Global `normalize` does nothing,
+because the problem is a lighting *gradient*, not overall contrast — which is
+exactly what CLAHE is for and what a global stretch cannot see.
+
+**Consequence: slice 3 splits.** Preprocessing (3a) is pulled forward and needs
+no device. Camera capture (3b) still does. Note sharp is Node-only, so the
+browser needs CLAHE over ImageData — roughly 60 lines, and preferable to pulling
+in OpenCV.js for one operation given the bundle sits behind a click.
+
+### The test suite now separates safety from capability
+
+Reading a receipt is a capability and capabilities may fail; a receipt shot in
+the dark can be genuinely unreadable, and the bake-off measures how often.
+Answering *wrongly* is different, and is what invariant 2 forbids.
+
+- **Safety, over all 40 fixtures including the unreadable ones:** whenever the
+  reconciler settles a bill, its numbers are the receipt's real numbers.
+  **This passes.** Not one wrong answer under any degradation. Guarded against
+  passing vacuously by also requiring that over half of fixtures settle.
+- **Capability, over the well-lit variants:** with `taqueria-folded` pinned as
+  known-unreadable — the fold shadow destroys the TAX and TIP labels, so the
+  receipt stops describing itself and is correctly refused. Listed rather than
+  excluded, so a change in either direction is noticed.
+
+`npx vitest run` 30/30.
