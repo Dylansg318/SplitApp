@@ -1,5 +1,6 @@
 target/
-!.mvn/wrapper/maven-wrapper.jar
+# Script-only wrapper: mvnw re-downloads this on demand, so it is not source.
+.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
