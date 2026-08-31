@@ -1,0 +1,125 @@
+import type { Cents, Word } from '../types';
+import { parseCents } from '../types';
+import { clusterRows, type Row } from './rows';
+
+export type FieldName = 'subtotal' | 'tax' | 'tip' | 'total';
+
+export interface LineItem {
+  desc: string;
+  price: Cents;
+  /** Index into ParsedReceipt.rows, so the UI can point at the source line. */
+  rowIndex: number;
+}
+
+export interface ParsedReceipt {
+  items: LineItem[];
+  fields: Record<FieldName, Cents | null>;
+  /** Where each field was found, for highlighting a suspect line. */
+  fieldRows: Partial<Record<FieldName, number>>;
+  rows: Row[];
+  /** Right edge of the detected price column, in image pixels. */
+  priceColumnX: number | null;
+}
+
+/**
+ * Label patterns, checked in order. SUBTOTAL must be tested before TOTAL or it
+ * matches as a total and the arithmetic silently uses the wrong number — the
+ * kind of bug that produces a plausible split that is simply wrong.
+ */
+const LABELS: [FieldName, RegExp][] = [
+  ['subtotal', /\b(SUB\s?-?\s?TOTAL|SUBTTL|SUB)\b/],
+  ['tax', /\b(TAX|VAT|GST|HST|PST|SALES\s?TAX)\b/],
+  ['tip', /\b(TIP|GRATUITY|SERVICE\s?(CHARGE|CHG)?)\b/],
+  ['total', /\b(GRAND\s?TOTAL|TOTAL|BALANCE(\s?DUE)?|AMOUNT\s?DUE)\b/],
+];
+
+/** Rows that carry a price but are not part of the bill's arithmetic. */
+const PAYMENT = /\b(CASH|CHANGE|VISA|MASTERCARD|MC|AMEX|DEBIT|CREDIT|CARD|TENDER|AUTH|APPROVED|REF|ACCT)\b/;
+
+/** A run of dashes, underscores or equals signs used as a separator. */
+const DIVIDER = /^[-_=~*.\s]+$/;
+
+const moneyOf = (w: Word) => parseCents(w.text);
+
+/**
+ * Find the receipt's price column: the x-position where right-aligned money
+ * tokens line up. Everything downstream keys off this rather than off text
+ * patterns, which is what makes a stray "2 for 1" in a description harmless.
+ */
+function detectPriceColumn(rows: Row[]): number | null {
+  const rightEdges: number[] = [];
+  for (const row of rows) {
+    const money = row.words.filter((w) => moneyOf(w) !== null);
+    const last = money.at(-1);
+    if (last) rightEdges.push(last.bbox.x1);
+  }
+  if (rightEdges.length < 2) return rightEdges[0] ?? null;
+
+  // The column is where most right edges agree. Take the densest cluster rather
+  // than the mean, so one stray number in the body cannot drag the column left.
+  const sorted = [...rightEdges].sort((a, b) => a - b);
+  const span = (sorted.at(-1)! - sorted[0]!) || 1;
+  const tolerance = Math.max(span * 0.05, 12);
+
+  let best = { x: sorted[0]!, count: 0 };
+  for (const candidate of sorted) {
+    const count = sorted.filter((x) => Math.abs(x - candidate) <= tolerance).length;
+    if (count > best.count) best = { x: candidate, count };
+  }
+  return best.x;
+}
+
+/** The rightmost money token in the row that sits in the price column. */
+function priceOf(row: Row, columnX: number | null, tolerance: number): { price: Cents; at: number } | null {
+  const money = row.words
+    .map((w, i) => ({ w, i, cents: moneyOf(w) }))
+    .filter((m): m is { w: Word; i: number; cents: Cents } => m.cents !== null);
+  if (money.length === 0) return null;
+
+  const inColumn = columnX === null ? money : money.filter((m) => Math.abs(m.w.bbox.x1 - columnX) <= tolerance);
+  const chosen = (inColumn.length ? inColumn : money).at(-1)!;
+  return { price: chosen.cents, at: chosen.i };
+}
+
+export function parseReceipt(words: Word[]): ParsedReceipt {
+  const rows = clusterRows(words);
+  const priceColumnX = detectPriceColumn(rows);
+  const pageWidth = Math.max(1, ...rows.map((r) => r.bbox.x1));
+  const tolerance = Math.max(pageWidth * 0.06, 15);
+
+  const items: LineItem[] = [];
+  const fields: Record<FieldName, Cents | null> = { subtotal: null, tax: null, tip: null, total: null };
+  const fieldRows: Partial<Record<FieldName, number>> = {};
+
+  rows.forEach((row, rowIndex) => {
+    if (DIVIDER.test(row.text)) return;
+
+    const found = priceOf(row, priceColumnX, tolerance);
+    if (!found) return;
+
+    const desc = row.words
+      .slice(0, found.at)
+      .map((w) => w.text)
+      .join(' ')
+      .trim();
+    const upper = desc.toUpperCase();
+
+    const label = LABELS.find(([, pattern]) => pattern.test(upper));
+    if (label) {
+      const [name] = label;
+      // First occurrence wins: receipts often repeat TOTAL in the payment block.
+      if (fields[name] === null) {
+        fields[name] = found.price;
+        fieldRows[name] = rowIndex;
+      }
+      return;
+    }
+
+    if (PAYMENT.test(upper)) return;
+    if (!desc) return;
+
+    items.push({ desc, price: found.price, rowIndex });
+  });
+
+  return { items, fields, fieldRows, rows, priceColumnX };
+}

@@ -59,8 +59,8 @@ API keys, no network after first load. Confidence comes from arithmetic, not fro
 
 ## Scope ledger
 
-- [x] 1. Move Java to `legacy-java/`; Vite+Preact+TS app at root; Tesseract behind `OcrEngine`; bake-off harness   DONE
-- [ ] 2. Geometric parser (row clustering, price column) + reconciliation engine                                   TODO
+- [x] 1. Move Java to `legacy-java/`; Vite+Preact+TS app at root; Tesseract behind `OcrEngine`; bake-off harness   DONE ed4b007
+- [x] 2. Geometric parser (row clustering, price column) + reconciliation engine                                   DONE eea7eff
 - [ ] 3. Camera capture: rear cam, guide frame, multi-frame voting, preprocess (grey/deskew/threshold)             TODO
 - [ ] 4. Split model: assignee sets, family-style default, proportional tax/tip, exact penny rounding              TODO
 - [ ] 5. Mobile UI: item list, tap-to-assign, inline number editing, reconciliation banner                         TODO
@@ -138,3 +138,36 @@ invariant 2 against a real misread rather than a hypothetical, and it sets slice
 bar higher than flagging: with exactly one bad field among four, the reconciler can
 SOLVE for it — 22.10 - 17.75 - 2.66 = 1.69, the true value. Detect, then repair,
 then ask the user to confirm the repair.
+
+## Slice 2 result — the thesis holds
+
+`npx tsc --noEmit` 0 errors. `npx vitest run` 14/14 pass. All 20 fixtures parse
+and reconcile to **exactly** the ground-truth subtotal/tax/tip/total.
+
+Three findings from execution, none of them predicted:
+
+1. **Skew broke the parser, not the OCR.** All five `skewed` fixtures failed at
+   first. The bake-off had already shown 100% OCR recall on them, so the fault
+   was mine: at 2.4 degrees across a 900px page a line's ends differ by ~38px of
+   vertical, well past a 0.6-line-height tolerance, so every row shattered.
+   Fixed by estimating the baseline slope as the median over adjacent word pairs
+   and grouping on the de-skewed coordinate `y - slope*x`. Median rather than a
+   least-squares fit because column gaps and stray marks are outliers a fit
+   would chase. This matters beyond the fixtures — no phone photo is square.
+
+2. **The malformed-money guard fired before the reconciler did.** `taqueria-faded`
+   was expected to surface tax as the misread 19169. It surfaces as `null`:
+   `parseCents` requires exactly two decimal places, so "19.169" is refused as a
+   money token and never becomes a number the app would spend. The reconciler
+   then derives the true 169 via the single-missing-field path instead of the
+   repair path. Two independent defences, reached by different routes — better
+   than designed, and the test now pins both.
+
+3. **Descriptions do not need to be exact.** Tesseract reads GYOZA as GY0ZA.
+   Prices are asserted exactly because they are the arithmetic; descriptions are
+   asserted only as human-recognisable, since they are cosmetic and editable
+   under invariant 4. Failing a build over GY0ZA would be theatre.
+
+Known limitation recorded, not fixed: discount and comp lines are unmodelled, so
+`isPlausible` treats `total < subtotal` as a misread. Revisit when a real receipt
+in `fixtures/receipts/real/` has a discount on it.
