@@ -105,15 +105,131 @@ const SPECS: ReceiptSpec[] = [
   },
 ];
 
-/** Degradations, roughly ordered by how much they hurt. */
-const VARIANTS: { name: string; apply: (s: Sharp) => Sharp }[] = [
-  { name: 'clean', apply: (s) => s },
+/**
+ * Degradations, roughly ordered by how much they hurt.
+ *
+ * The first four are gentle and the parser clears them easily; they are kept
+ * because `taqueria-faded` is a pinned regression case. The last four try to be
+ * an actual photograph: a hand-held phone under restaurant lighting, paper that
+ * has been folded into a pocket, a lens that focused on the tablecloth.
+ *
+ * Synthetic degradation is still a model of reality rather than reality. It gets
+ * the optics roughly right — defocus, shear, falloff, sensor noise, JPEG — and
+ * cannot reproduce a coffee ring or the way thermal print dies unevenly. Real
+ * photographs in ../real/ remain the honest gate.
+ */
+type Degrade = (img: Sharp, w: number, h: number) => Sharp;
+
+/**
+ * Rasterise an overlay to exactly w x h.
+ *
+ * librsvg rounds an SVG's canvas, so an overlay declared at the page size can
+ * come out a pixel larger — and sharp refuses to composite an input bigger than
+ * its target. Forcing the size here is the difference between a working
+ * pipeline and an error that surfaces on an unrelated line, because composites
+ * are lazy and only fail when the chain is finally drained.
+ */
+const exact = (svg: Buffer, w: number, h: number): Promise<Buffer> =>
+  sharp(svg).resize(w, h, { fit: 'fill' }).png().toBuffer();
+
+/** Uneven illumination: a bright spot with falloff, multiplied over the page. */
+const lighting = (w: number, h: number, strength: number, cx = 0.35, cy = 0.25): Buffer =>
+  Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+      <defs><radialGradient id="g" cx="${cx * 100}%" cy="${cy * 100}%" r="95%">
+        <stop offset="0%" stop-color="#fff"/>
+        <stop offset="100%" stop-color="rgb(${Math.round(255 - strength)},${Math.round(255 - strength)},${Math.round(255 - strength)})"/>
+      </radialGradient></defs>
+      <rect width="100%" height="100%" fill="url(#g)"/>
+    </svg>`,
+  );
+
+/** Soft dark bands where the paper was folded, plus the crease highlight. */
+const folds = (w: number, h: number, at: number[]): Buffer =>
+  Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+      <defs>${at
+        .map(
+          (y, i) => `<linearGradient id="f${i}" x1="0" y1="${Math.max(0, y - 0.05) * 100}%" x2="0" y2="${Math.min(1, y + 0.05) * 100}%">
+            <stop offset="0%" stop-color="#fff"/>
+            <stop offset="45%" stop-color="#b8b8b8"/>
+            <stop offset="55%" stop-color="#f4f4f4"/>
+            <stop offset="100%" stop-color="#fff"/>
+          </linearGradient>`,
+        )
+        .join('')}</defs>
+      <rect width="100%" height="100%" fill="#fff"/>
+      ${at.map((_, i) => `<rect width="100%" height="100%" fill="url(#f${i})" opacity="0.85"/>`).join('')}
+    </svg>`,
+  );
+
+/** Gaussian sensor noise, screened over the page. */
+const grain = (w: number, h: number, sigma: number) =>
+  sharp({ create: { width: w, height: h, channels: 3, background: '#808080', noise: { type: 'gaussian', mean: 128, sigma } } })
+    .png()
+    .toBuffer();
+
+/**
+ * A variant is split in two because rotation changes the canvas size: overlays
+ * have to be built against the geometry's OUTPUT dimensions, not the input's.
+ */
+interface Variant {
+  name: string;
+  /** Rotation / shear. Changes the image's dimensions. */
+  geometry?: (img: Sharp) => Sharp;
+  /** Lighting, folds, levels. Sized to the post-geometry canvas. */
+  surface?: (img: Sharp, w: number, h: number) => Promise<Sharp>;
+  /** What the camera itself adds on the way out. */
+  capture?: { sigma: number; quality: number; scale: number };
+}
+
+const VARIANTS: Variant[] = [
+  { name: 'clean' },
   // Thermal paper that has been in a wallet: blacks lift toward grey.
-  { name: 'faded', apply: (s) => s.linear(0.45, 110) },
+  { name: 'faded', surface: async (s) => s.linear(0.45, 110) },
   // Photographed by a human, not a scanner.
-  { name: 'skewed', apply: (s) => s.rotate(2.4, { background: '#ffffff' }) },
-  // Faded AND slightly out of focus — the realistic worst case.
-  { name: 'worn', apply: (s) => s.linear(0.55, 95).blur(1.1) },
+  { name: 'skewed', geometry: (s) => s.rotate(2.4, { background: '#ffffff' }) },
+  { name: 'worn', surface: async (s) => s.linear(0.55, 95).blur(1.1) },
+
+  // --- the ones that are meant to be hard ---
+
+  // A normal phone snap: off-axis, uneven light, a little grain.
+  {
+    name: 'handheld',
+    geometry: (s) => s.rotate(-3.1, { background: '#ffffff' }).affine([1, 0.045, 0.02, 1], { background: '#ffffff' }),
+    surface: async (s, w, h) =>
+      s.composite([{ input: await exact(lighting(w, h, 70), w, h), blend: 'multiply' }]).linear(0.9, 12),
+    capture: { sigma: 7, quality: 82, scale: 1 },
+  },
+  // Folded into a pocket, then flattened badly on the table.
+  {
+    name: 'folded',
+    geometry: (s) => s.rotate(1.8, { background: '#ffffff' }),
+    surface: async (s, w, h) =>
+      s
+        .composite([
+          { input: await exact(folds(w, h, [0.34, 0.66]), w, h), blend: 'multiply' },
+          { input: await exact(lighting(w, h, 55, 0.6, 0.2), w, h), blend: 'multiply' },
+        ])
+        .linear(0.7, 70),
+    capture: { sigma: 9, quality: 74, scale: 0.85 },
+  },
+  // Dim restaurant light: heavy falloff, real grain, lossy capture.
+  {
+    name: 'dim',
+    geometry: (s) => s.rotate(-1.4, { background: '#ffffff' }),
+    surface: async (s, w, h) =>
+      s.composite([{ input: await exact(lighting(w, h, 135, 0.4, 0.15), w, h), blend: 'multiply' }]).linear(0.5, 90),
+    capture: { sigma: 16, quality: 62, scale: 0.8 },
+  },
+  // The lens focused on the tablecloth. Soft, small, and JPEG-mangled.
+  {
+    name: 'defocused',
+    geometry: (s) => s.rotate(2.0, { background: '#ffffff' }).affine([1, 0.03, 0.015, 1], { background: '#ffffff' }),
+    surface: async (s, w, h) =>
+      s.composite([{ input: await exact(lighting(w, h, 90, 0.5, 0.3), w, h), blend: 'multiply' }]).blur(2.6).linear(0.65, 80),
+    capture: { sigma: 12, quality: 48, scale: 0.55 },
+  },
 ];
 
 const WIDTH = 620;
@@ -203,10 +319,41 @@ async function main(): Promise<void> {
       const gt = groundTruth(spec, variant.name);
       const { svg, text } = buildReceipt(spec, gt);
       gt.fullText = text;
+
       // Render at 2x then downsample: closer to a phone photo than rendering
       // small, and it stops the degradations from acting on crisp vector edges.
-      const base = sharp(Buffer.from(svg), { density: 144 }).resize({ width: 900 });
-      await variant.apply(base).greyscale().png().toFile(join(OUT, `${gt.id}.png`));
+      let buf = await sharp(Buffer.from(svg), { density: 144 }).resize({ width: 900 }).png().toBuffer();
+
+      if (variant.geometry) buf = await variant.geometry(sharp(buf)).png().toBuffer();
+
+      const meta = await sharp(buf).metadata();
+      const w = meta.width ?? 900;
+      const h = meta.height ?? 900;
+
+      let img = variant.surface ? await variant.surface(sharp(buf), w, h) : sharp(buf);
+      img = img.greyscale();
+
+      // Everything a phone adds on the way out: grain, a lossy encode, and the
+      // fact that nobody's crop is full resolution.
+      if (variant.capture) {
+        // Two passes, deliberately. sharp applies its operations in a fixed
+        // order — resize runs BEFORE composite no matter how they are chained —
+        // so doing both in one pass shrinks the page first and then rejects the
+        // full-size grain as "larger than the target". Drain the composite,
+        // then resize.
+        const grained = await sharp(await img.png().toBuffer())
+          .composite([{ input: await grain(w, h, variant.capture.sigma), blend: 'overlay' }])
+          .png()
+          .toBuffer();
+
+        buf = await sharp(grained)
+          .resize({ width: Math.max(200, Math.round(w * variant.capture.scale)) })
+          .jpeg({ quality: variant.capture.quality })
+          .toBuffer();
+        img = sharp(buf);
+      }
+
+      await img.png().toFile(join(OUT, `${gt.id}.png`));
       await writeFile(join(OUT, `${gt.id}.json`), JSON.stringify(gt, null, 2));
       count++;
     }
