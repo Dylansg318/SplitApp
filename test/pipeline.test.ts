@@ -85,10 +85,15 @@ describe.skipIf(!available)('pipeline over synthetic fixtures', () => {
    * documents the actual limits and a change in EITHER direction is noticed.
    */
   const KNOWN_UNREADABLE: Record<string, string> = {
-    // taqueria-folded used to live here: the fold shadow buried its TAX and TIP
-    // labels and the receipt stopped describing itself. Sharpening recovers
-    // them, and this list caught the improvement rather than the regression —
-    // which is the reason known failures are listed instead of excluded.
+    // Marginal, and it has flipped twice today. Sharpening recovered its TAX
+    // and TIP labels — the list caught that improvement rather than a
+    // regression, which is why known failures are listed and not excluded — but
+    // the fold shadow still eats the decimal point in one item price, reading
+    // "3.75" as "35". parseCents rightly refuses that, so the items fall short
+    // of the printed subtotal and the bill is refused. Whether this fixture
+    // passes turns on knife-edge OCR behaviour, so it is pinned rather than
+    // tuned for.
+    'taqueria-folded': 'fold shadow eats the decimal in an item price (3.75 -> 35)',
     // Sharpening costs this already-soft fixture its COLD BREW line, so the
     // items stop matching the printed subtotal and the bill is refused. A
     // capability loss, not a safety one, and the trade is strongly positive:
