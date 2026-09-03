@@ -645,3 +645,12 @@ portfolio under `public/demos/receipt-splitter/tesseract/`.
 
 The live camera on a real phone — permission flow, torch, the streak on a real
 hand. Slices 6 (persist/share) and 7 (PWA/offline) remain.
+
+### Follow-up, same day: the look, and an example
+
+Restyled to one accent, grouped cards on a soft ground, system type — the
+reconciliation verdict is the only coloured thing on the page because it is
+the only judgement. Added **Try an example receipt**: the bundled synthetic
+brunch receipt goes through the still-photo path, so the demo is a real read
+(5 items, 54.00/3.38/11.88/69.26) and not a canned screen. The review screen
+can show the source image beside the numbers. Verified in headless Chromium.

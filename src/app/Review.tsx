@@ -21,8 +21,8 @@ import {
 /**
  * THE REVIEW SCREEN — slice 5.
  *
- * Everything on it is editable in one tap (invariant 4), the banner at the top
- * is the reconciler's verdict on the bill AS EDITED, and the split at the
+ * Everything on it is editable in one tap (invariant 4), the banner at the
+ * top is the reconciler's verdict on the bill AS EDITED, and the split at the
  * bottom exists only while that verdict is clean (invariant 2). Tapping a name
  * on an item moves money between people and never changes the total
  * (invariant 5).
@@ -30,6 +30,8 @@ import {
 export interface ReviewProps {
   bill: EditableBill;
   origin: string;
+  /** The receipt the numbers came from, when there was one, so they can be checked against it. */
+  image: string | null;
   onChange: (bill: EditableBill) => void;
   onRescan: () => void;
 }
@@ -41,25 +43,39 @@ const FIELDS: { key: TotalsField; label: string }[] = [
   { key: 'total', label: 'Total' },
 ];
 
-export function Review({ bill, origin, onChange, onRescan }: ReviewProps) {
+export function Review({ bill, origin, image, onChange, onRescan }: ReviewProps) {
   const v = verdict(bill);
   const { reconciliation, split } = v;
   const suspect = new Set(reconciliation.repairs.map((r) => r.field));
   const itemsSum = bill.items.reduce((s, i) => s + i.price, 0);
+  const [showImage, setShowImage] = useState(false);
 
   return (
     <main class="screen review">
       <header class="topbar">
-        <button type="button" class="btn btn-ghost" onClick={onRescan}>
-          ← Scan again
+        <button type="button" class="btn btn-link" onClick={onRescan}>
+          ‹ Scan again
         </button>
         <span class="muted small">{origin}</span>
       </header>
 
       <Banner bill={bill} v={v} onApply={() => onChange(applyRepairs(bill, reconciliation))} />
 
-      <section class="block">
-        <h2>Who’s paying</h2>
+      {image && (
+        <div class="receipt-toggle">
+          <button type="button" class="btn btn-link" onClick={() => setShowImage((s) => !s)} aria-expanded={showImage}>
+            {showImage ? 'Hide the receipt' : 'Show the receipt'}
+          </button>
+          {showImage && (
+            <figure class="receipt-image">
+              <img src={image} alt="The receipt these numbers were read from" />
+            </figure>
+          )}
+        </div>
+      )}
+
+      <section class="card">
+        <h2>People</h2>
         <ul class="people">
           {bill.people.map((p) => (
             <li key={p.id}>
@@ -77,18 +93,18 @@ export function Review({ bill, origin, onChange, onRescan }: ReviewProps) {
             </li>
           ))}
           <li>
-            <button type="button" class="btn btn-ghost" onClick={() => onChange(addPerson(bill, `Friend ${bill.people.length}`))}>
-              + Add person
+            <button type="button" class="btn btn-link" onClick={() => onChange(addPerson(bill, `Friend ${bill.people.length}`))}>
+              + Add
             </button>
           </li>
         </ul>
       </section>
 
-      <section class="block">
+      <section class="card">
         <h2>
-          Items <span class="muted small">tap a name to assign; nobody means everyone</span>
+          Items <span class="muted small">tap a name to assign · nobody means everyone</span>
         </h2>
-        {bill.items.length === 0 && <p class="muted">No line items. The total alone will be split evenly.</p>}
+        {bill.items.length === 0 && <p class="muted">No line items. The total will be split evenly.</p>}
         <ul class="items">
           {bill.items.map((item) => (
             <li key={item.id} class="item">
@@ -123,7 +139,7 @@ export function Review({ bill, origin, onChange, onRescan }: ReviewProps) {
           ))}
         </ul>
         <div class="row between">
-          <button type="button" class="btn btn-ghost" onClick={() => onChange(addItem(bill))}>
+          <button type="button" class="btn btn-link" onClick={() => onChange(addItem(bill))}>
             + Add item
           </button>
           {bill.items.length > 0 && (
@@ -134,7 +150,7 @@ export function Review({ bill, origin, onChange, onRescan }: ReviewProps) {
         </div>
       </section>
 
-      <section class="block">
+      <section class="card">
         <h2>Printed totals</h2>
         <ul class="totals">
           {FIELDS.map(({ key, label }) => (
@@ -147,15 +163,15 @@ export function Review({ bill, origin, onChange, onRescan }: ReviewProps) {
       </section>
 
       {split && (
-        <section class="block split">
+        <section class="card split">
           <h2>Each person owes</h2>
           {v.evenly && <p class="muted small">No line items, so the total is split evenly.</p>}
           <ul class="shares">
             {split.shares.map((s) => (
               <li key={s.personId}>
                 <div class="share-head">
-                  <strong>{s.name || '?'}</strong>
-                  <strong class="amount">${formatCents(s.total)}</strong>
+                  <span class="share-name">{s.name || '?'}</span>
+                  <span class="amount">${formatCents(s.total)}</span>
                 </div>
                 {!v.evenly && (
                   <div class="muted small">
@@ -166,7 +182,7 @@ export function Review({ bill, origin, onChange, onRescan }: ReviewProps) {
             ))}
           </ul>
           <p class="sum ok">
-            Adds up to ${formatCents(split.total)} — matches the printed total.
+            <span class="check" aria-hidden="true">✓</span> ${formatCents(split.total)} — matches the printed total
           </p>
         </section>
       )}
