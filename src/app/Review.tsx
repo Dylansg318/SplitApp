@@ -5,6 +5,7 @@ import {
   addItem,
   addPerson,
   applyRepairs,
+  nextPlaceholderName,
   parseTyped,
   removeItem,
   removePerson,
@@ -78,7 +79,7 @@ export function Review({ bill, origin, image, onChange, onRescan }: ReviewProps)
         <h2>People</h2>
         <ul class="people">
           {bill.people.map((p) => (
-            <li key={p.id}>
+            <li key={p.id} class="pill">
               <input
                 class="name"
                 value={p.name}
@@ -86,15 +87,21 @@ export function Review({ bill, origin, image, onChange, onRescan }: ReviewProps)
                 onInput={(e) => onChange(renamePerson(bill, p.id, (e.currentTarget as HTMLInputElement).value))}
               />
               {bill.people.length > 1 && (
-                <button type="button" class="x" aria-label={`Remove ${p.name}`} onClick={() => onChange(removePerson(bill, p.id))}>
+                <button
+                  type="button"
+                  class="remove"
+                  aria-label={`Remove ${p.name}`}
+                  title={`Remove ${p.name}`}
+                  onClick={() => onChange(removePerson(bill, p.id))}
+                >
                   ×
                 </button>
               )}
             </li>
           ))}
           <li>
-            <button type="button" class="btn btn-link" onClick={() => onChange(addPerson(bill, `Friend ${bill.people.length}`))}>
-              + Add
+            <button type="button" class="btn btn-link" onClick={() => onChange(addPerson(bill, nextPlaceholderName(bill.people)))}>
+              + Add person
             </button>
           </li>
         </ul>
@@ -117,7 +124,7 @@ export function Review({ bill, origin, image, onChange, onRescan }: ReviewProps)
                   onInput={(e) => onChange(setItemDesc(bill, item.id, (e.currentTarget as HTMLInputElement).value))}
                 />
                 <Money value={item.price} onCommit={(c) => onChange(setItemPrice(bill, item.id, c ?? 0))} />
-                <button type="button" class="x" aria-label="Remove item" onClick={() => onChange(removeItem(bill, item.id))}>
+                <button type="button" class="remove" aria-label="Remove item" title="Remove item" onClick={() => onChange(removeItem(bill, item.id))}>
                   ×
                 </button>
               </div>
