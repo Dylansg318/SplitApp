@@ -45,3 +45,5 @@ fixtures/receipts/synthetic/
 # tesseract.js downloads language data beside the process at runtime.
 *.traineddata
 *.local
+# Staged by scripts/vendor-tesseract.ts before dev/build; ~12MB of engine.
+public/tesseract/

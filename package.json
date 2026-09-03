@@ -8,7 +8,9 @@
     "node": ">=20.11.0"
   },
   "scripts": {
+    "predev": "tsx scripts/vendor-tesseract.ts",
     "dev": "vite",
+    "prebuild": "tsx scripts/vendor-tesseract.ts",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -16,7 +18,8 @@
     "fixtures": "tsx scripts/make-fixtures.ts",
     "bakeoff": "tsx scripts/bakeoff.ts",
     "bench:preprocess": "tsx scripts/preprocess-bench.ts",
-    "try": "tsx scripts/try.ts"
+    "try": "tsx scripts/try.ts",
+    "vendor": "tsx scripts/vendor-tesseract.ts"
   },
   "dependencies": {
     "preact": "^10.29.8",

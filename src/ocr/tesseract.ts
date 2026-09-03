@@ -14,13 +14,47 @@ import type { OcrResult, Word } from '../types';
  * `{ blocks: true }` third argument; drop it and the parser silently gets
  * nothing to work with.
  */
+/**
+ * Where the worker script, the WASM core and the language data live.
+ *
+ * tesseract.js defaults every one of these to a CDN (jsdelivr for code,
+ * projectnaptha for language data). The Node bake-off is happy with that. The
+ * app is not: invariant 1 is "nothing leaves the device", and a demo that goes
+ * dark when a third party does is not a demo. The app passes its own origin —
+ * see `scripts/vendor-tesseract.ts`, which stages the files under public/.
+ *
+ * Absolute URLs, deliberately. The worker is spawned from a blob URL, so a
+ * relative `corePath` would resolve against the blob and 404.
+ */
+export interface TesseractPaths {
+  workerPath?: string;
+  corePath?: string;
+  langPath?: string;
+}
+
 export class TesseractEngine implements OcrEngine {
   readonly name = 'tesseract.js@7';
   #worker: Worker | null = null;
+  #paths: TesseractPaths;
+  #initPromise: Promise<void> | null = null;
 
-  async init(): Promise<void> {
-    if (this.#worker) return;
-    this.#worker = await createWorker('eng');
+  constructor(paths: TesseractPaths = {}) {
+    this.#paths = paths;
+  }
+
+  /** Idempotent AND concurrent-safe: two callers racing get one worker. */
+  init(): Promise<void> {
+    if (this.#worker) return Promise.resolve();
+    if (!this.#initPromise) {
+      this.#initPromise = createWorker('eng', undefined, { ...this.#paths, gzip: true })
+        .then((worker) => {
+          this.#worker = worker;
+        })
+        .finally(() => {
+          this.#initPromise = null;
+        });
+    }
+    return this.#initPromise;
   }
 
   async recognize(image: ImageLike): Promise<OcrResult> {
