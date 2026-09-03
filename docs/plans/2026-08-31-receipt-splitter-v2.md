@@ -62,12 +62,12 @@ API keys, no network after first load. Confidence comes from arithmetic, not fro
 - [x] 1. Move Java to `legacy-java/`; Vite+Preact+TS app at root; Tesseract behind `OcrEngine`; bake-off harness   DONE ed4b007
 - [x] 2. Geometric parser (row clustering, price column) + reconciliation engine                                   DONE eea7eff
 - [x] 3a. Preprocessing on the OCR path — shipped as sharpen-only; CLAHE measured worse                            DONE
-- [ ] 3b. Camera capture: rear cam, guide frame, multi-frame voting                                                 TODO (needs a device)
+- [x] 3b. Camera capture: rear cam, guide frame, multi-frame voting — built, opt-in on tap; phone check pending        DONE (code) / TODO (device)
 - [x] 4. Split model: assignee sets, family-style default, proportional tax/tip, exact penny rounding              DONE a4d219b
-- [ ] 5. Mobile UI: item list, tap-to-assign, inline number editing, reconciliation banner                         TODO
+- [x] 5. Mobile UI: item list, tap-to-assign, inline number editing, reconciliation banner                         DONE
 - [ ] 6. Persistence (IndexedDB) + URL-fragment share + share image via Web Share API                              TODO
 - [ ] 7. PWA shell: manifest, service worker, offline model cache, iOS-safe (no standalone)                        TODO
-- [ ] 8. Portfolio embed via iframe lane + rewrite `receipt-splitter/index.mdx` (status, AI claims)                 TODO
+- [x] 8. Portfolio embed via iframe lane + rewrite `receipt-splitter/index.mdx` (status, AI claims)                 DONE
 
 ## Slice detail — slice 1 only
 
@@ -580,3 +580,68 @@ video or burst of one receipt while the phone moves, and a flash comparison.
 Flash is the larger untested lever — dim fixtures went 0% -> 80% on software
 preprocessing alone, and flash attacks that at source instead of repairing it.
 MHLHUB's `<CameraScanner>` already has a working torch toggle to lift.
+
+## Slices 5, 3b and 8 — the app, the camera, the embed
+
+Built in one pass, 2026-09-03, with the logic kept out of the DOM so it could be
+tested the way the rest of the project is.
+
+### Accept policy (`src/capture/session.ts`, 12 tests)
+
+`settleFrame` already encoded the measured ordering. The camera session adds the
+one rule pipeline.ts left to the UI: a settlement that needed a REPAIR came from
+a single pose, so it must repeat. Three outcomes, three treatments — reconciled
+accepts at once; repaired via a single frame waits for the same repaired bill in
+the next frame (repaired via consensus has already been re-observed and is
+accepted); unresolved keeps looking. A still photograph gets the plain policy:
+accept what it proves, hand repairs to the user, refuse the rest.
+
+### Editable bill (`src/app/bill.ts`, 19 tests)
+
+One definition of "adds up". The review screen holds the raw values and runs the
+SAME `reconcile()` over them on every render, so the banner that judged the
+camera frame judges the user's edits. Repairs are proposed, applied on a button.
+The split exists only while the verdict is clean; editing a total so the books
+stop closing removes it the same render. Found while writing the tests: a total
+edited by seven cents produces THREE single-field corrections that each balance,
+so the reconciler refuses — correct, and the test had assumed otherwise.
+
+### Camera (`src/capture/camera.ts`, `src/app/Capture.tsx`)
+
+Ported from MHLHUB's decoder.ts and `<CameraScanner>`: ideal-only constraints,
+1920x1080 with continuous focus, the negotiated resolution on screen, cover-crop
+geometry so OCR sees the guide's pixels (which is also the crop-to-paper stage
+the real-photograph results asked for), a cadence with a duty-ratio floor, the
+torch, the still-photo escalation, an idempotent stop. Different here: the loop
+awaits OCR, so frames are serial and 300 ms–2 s apart on their own — rule 4
+(do not sample too fast) comes free and must not be optimised away.
+
+The page opens with the camera CLOSED and asks for it on a tap (Dylan's call).
+
+### Engine self-hosted
+
+tesseract.js defaults to jsdelivr for its worker and core and to projectnaptha
+for language data. Invariant 1 and the iframe sandbox both say no. Measured in
+the browser which files the worker actually requests: `worker.min.js`, ONE
+`tesseract-core-*-lstm.wasm.js` chosen by SIMD feature detection, and
+`eng.traineddata.gz`. The `.wasm.js` loaders embed their binary — the bare
+`.wasm` beside them is never fetched — so those are not shipped. Vendored set is
+~12MB (three core variants, because a missing one is a broken phone), staged by
+`scripts/vendor-tesseract.ts` before dev/build, gitignored here, committed in the
+portfolio under `public/demos/receipt-splitter/tesseract/`.
+
+### Verified
+
+- `tsc --noEmit`: 0 errors. `vitest`: 88/88 (60 existing + 28 new).
+- Built app in headless Chromium: engine loads from origin only (3 requests);
+  `brunch-clean.png` through the photo path → 5 items, 54.00 / 3.38 / 11.88 /
+  69.26, reconciled, split $34.63 + $34.63; tapping a name moves money
+  ($43.61 / $25.65, still 69.26); a broken total withdraws the split; an
+  unparseable entry is refused and shown red.
+- Portfolio: `Demo.astro` gains a per-demo `camera` opt-in on the iframe lane;
+  the frontmatter sets it.
+
+### Not yet measured
+
+The live camera on a real phone — permission flow, torch, the streak on a real
+hand. Slices 6 (persist/share) and 7 (PWA/offline) remain.

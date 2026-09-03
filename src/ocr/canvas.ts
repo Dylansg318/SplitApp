@@ -16,10 +16,22 @@ const sizeOf = (source: Source): { width: number; height: number } =>
     ? { width: source.videoWidth, height: source.videoHeight }
     : { width: source.width, height: source.height };
 
-/** Draw a frame and hand back its luma plane. */
-export function sourceToGray(source: Source): Gray {
-  const { width, height } = sizeOf(source);
-  if (width === 0 || height === 0) throw new Error('sourceToGray: source has no dimensions yet');
+/**
+ * Draw a frame and hand back its luma plane.
+ *
+ * `maxEdge` caps the long side. Preprocessing deliberately never UPSCALES
+ * (measured 85% -> 50%), but a phone camera-app photo is 4000+ px wide and a
+ * 12-megapixel OCR pass takes tens of seconds on a phone; MHLHUB caps its
+ * still-photo path at 3000 px for the same reason. Scaling DOWN mildly keeps
+ * the stroke widths the sharpen was tuned against, since the sigma tracks
+ * image width.
+ */
+export function sourceToGray(source: Source, { maxEdge }: { maxEdge?: number } = {}): Gray {
+  const natural = sizeOf(source);
+  if (natural.width === 0 || natural.height === 0) throw new Error('sourceToGray: source has no dimensions yet');
+  const scale = maxEdge ? Math.min(1, maxEdge / Math.max(natural.width, natural.height)) : 1;
+  const width = Math.max(1, Math.round(natural.width * scale));
+  const height = Math.max(1, Math.round(natural.height * scale));
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
