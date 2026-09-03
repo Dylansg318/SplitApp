@@ -28,6 +28,11 @@ import {
  * What is different: the loop hands each frame to OCR, and the accept decision
  * belongs to `CaptureSession`, which is pure and tested. This component owns
  * the camera and the pixels, nothing about money.
+ *
+ * The page opens with the camera CLOSED. Nothing asks for a permission until
+ * the user taps for it — a portfolio visitor who only wanted to read should
+ * never see a camera prompt, and on a phone the prompt is the moment the app
+ * either earns trust or loses it.
  */
 
 /** Portrait guide, as fractions of the preview. A receipt is tall. */
@@ -36,24 +41,29 @@ const GUIDE: Guide = { x: 0.08, y: 0.05, w: 0.84, h: 0.9 };
 /** Long-edge cap for a camera-app photo — see sourceToGray. */
 const STILL_MAX_EDGE = 3000;
 
-const CAMERA_BLOCKED = 'Camera blocked. Take a photo with your camera app instead, or type the receipt in.';
-const NO_CAMERA = 'No camera here. Choose a photo of the receipt, or type it in.';
+const CAMERA_BLOCKED = 'Camera blocked. Use a photo from your camera app, or type the receipt in.';
+const NO_CAMERA = 'No camera on this device. Use a photo, or type the receipt in.';
 
 const FIELDS = ['subtotal', 'tax', 'tip', 'total'] as const;
 
+/** A single image, from the user's camera roll or the bundled example. */
+export type StillSource = 'photo' | 'example';
+
 export interface CaptureProps {
   engine: OcrEngine;
-  onSettled: (state: Settled, source: 'live' | 'photo') => void;
+  /** `image` is a URL the review screen may show; blob: URLs are the caller's to revoke. */
+  onSettled: (state: Settled, source: 'live' | StillSource, image: string | null) => void;
   onManual: () => void;
 }
 
-/**
- * The page opens with the camera CLOSED. Nothing asks for a permission until
- * the user taps for it — a portfolio visitor who only wanted to read should
- * never see a camera prompt, and on a phone the prompt is the moment the app
- * either earns trust or loses it.
- */
 type Phase = 'idle' | 'starting' | 'live' | 'blocked' | 'nocamera';
+
+interface StillState {
+  state: 'idle' | 'reading' | 'failed';
+  /** Shown in the stage while it is read, and kept on failure so the user sees what was tried. */
+  url: string | null;
+  problems: string[];
+}
 
 export function Capture({ engine, onSettled, onManual }: CaptureProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -72,10 +82,7 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
   const [torchOn, setTorchOn] = useState(false);
   const [torchAvailable, setTorchAvailable] = useState(false);
   const [resolution, setResolution] = useState<string | null>(null);
-  const [photo, setPhoto] = useState<{ state: 'idle' | 'reading' | 'failed'; problems: string[] }>({
-    state: 'idle',
-    problems: [],
-  });
+  const [still, setStill] = useState<StillState>({ state: 'idle', url: null, problems: [] });
 
   const stopCamera = () => {
     loopRef.current?.stop();
@@ -123,6 +130,7 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
       setPhase('nocamera');
       return;
     }
+    setStill({ state: 'idle', url: null, problems: [] });
     setPhase('starting');
     sessionRef.current.reset();
     setLooking(null);
@@ -160,7 +168,7 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
         const state = sessionRef.current.observeWords(words);
         if (state.kind === 'settled') {
           stopCamera();
-          onSettledRef.current(state, 'live');
+          onSettledRef.current(state, 'live', null);
           return true;
         }
         setLooking(state);
@@ -184,51 +192,69 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
     if (await setTorch(streamRef.current, next)) setTorchOn(next);
   };
 
-  const onPhoto = async (e: Event) => {
-    const input = e.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = ''; // let the same photo be retried
-    if (!file) return;
+  /**
+   * One image through the whole pipeline. The same code serves the camera
+   * roll and the bundled example, so the example is a real test of the
+   * reader, not a canned result.
+   */
+  const readStill = async (blob: Blob, url: string, source: StillSource) => {
+    if (phase === 'live' || phase === 'starting') closeLive();
     busyRef.current = true;
-    setPhoto({ state: 'reading', problems: [] });
+    setStill({ state: 'reading', url, problems: [] });
     try {
       await engine.init();
-      const bitmap = await loadBitmap(file);
+      const bitmap = await loadBitmap(blob);
       const gray = sourceToGray(bitmap, { maxEdge: STILL_MAX_EDGE });
       if ('close' in bitmap) bitmap.close();
       const { words } = await engine.recognize(grayToCanvas(preprocess(gray)));
+      if (deadRef.current) return;
       const state = CaptureSession.still(words);
       if (state.kind === 'settled') {
-        stopCamera();
-        onSettledRef.current(state, 'photo');
+        onSettledRef.current(state, source, url);
         return;
       }
-      setPhoto({
+      setStill({
         state: 'failed',
+        url,
         problems: state.sawMoney
           ? state.problems
           : ['No prices found in that photo. Fill the frame with the receipt, flat, in good light.'],
       });
     } catch (err) {
       console.error('[capture] photo failed', err);
-      setPhoto({ state: 'failed', problems: ['Could not read that photo.'] });
+      setStill({ state: 'failed', url, problems: ['Could not read that photo.'] });
     } finally {
       busyRef.current = false;
     }
   };
 
-  const photoInput = (
-    <label class="btn btn-secondary">
-      {photo.state === 'reading' ? 'Reading photo…' : 'Use a photo'}
-      <input type="file" accept="image/*" capture="environment" class="sr-only" onChange={onPhoto} disabled={photo.state === 'reading'} />
-    </label>
-  );
+  const onPhoto = async (e: Event) => {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // let the same photo be retried
+    if (!file) return;
+    await readStill(file, URL.createObjectURL(file), 'photo');
+  };
 
+  const tryExample = async () => {
+    const url = new URL('example-receipt.png', document.baseURI).href;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${res.status}`);
+      await readStill(await res.blob(), url, 'example');
+    } catch (err) {
+      console.error('[capture] example missing', err);
+      setStill({ state: 'failed', url: null, problems: ['The example receipt could not be loaded.'] });
+    }
+  };
+
+  const reading = still.state === 'reading';
   const snapshot = looking?.snapshot;
   const status = (() => {
     if (engineState === 'failed') return 'The reader failed to load. Reload the page to try again.';
-    if (engineState === 'loading') return 'Loading the reader — one time, about 6 MB…';
-    if (phase === 'idle') return 'Open the camera and fill the frame with the receipt, or use a photo.';
+    if (reading) return 'Reading the receipt…';
+    if (engineState === 'loading') return 'Loading the reader — one time, about 6 MB.';
+    if (phase === 'idle') return null;
     if (phase !== 'live') return null;
     if (!looking) return 'Fill the frame with the receipt.';
     if (snapshot?.unsteady) return 'Hold steady — not reading the same numbers twice.';
@@ -239,20 +265,37 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
 
   const fallback = phase === 'blocked' || phase === 'nocamera';
   const showStage = phase === 'starting' || phase === 'live';
+  const showStill = !showStage && still.url !== null;
 
   return (
     <main class="screen capture">
-      <header class="topbar">
-        <h1>Receipt Splitter</h1>
-        <span class="muted small">Nothing leaves your phone</span>
+      <header class="hero">
+        <p class="eyebrow">Receipt Splitter</p>
+        <h1>Split the check from a photo.</h1>
+        <p class="lede">Point the camera at the receipt, tap who had what, done. Nothing leaves your phone.</p>
       </header>
 
-      {phase === 'idle' && (
+      {phase === 'idle' && !showStill && (
         <div class="stage idle">
           <button type="button" class="btn btn-primary big" onClick={openLive} disabled={engineState === 'failed'}>
             Open camera
           </button>
-          <span class="small" style={{ color: '#bbb' }}>Asks for camera permission only when you tap</span>
+          <button type="button" class="btn btn-link" onClick={tryExample} disabled={reading}>
+            Try an example receipt
+          </button>
+          <span class="hint">Asks for the camera only when you tap</span>
+        </div>
+      )}
+
+      {showStill && (
+        <div class={`stage still${reading ? ' reading' : ''}`}>
+          <img src={still.url ?? undefined} alt="The receipt being read" />
+          {reading && <div class="stage-note">Reading…</div>}
+          {!reading && (
+            <button type="button" class="btn btn-ghost close" onClick={() => setStill({ state: 'idle', url: null, problems: [] })} aria-label="Dismiss">
+              ×
+            </button>
+          )}
         </div>
       )}
 
@@ -277,14 +320,12 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
       )}
 
       {fallback && (
-        <div class="panel" role="alert">
-          {phase === 'blocked' ? CAMERA_BLOCKED : NO_CAMERA}
+        <div class="card notice" role="alert">
+          <p>{phase === 'blocked' ? CAMERA_BLOCKED : NO_CAMERA}</p>
           {phase === 'blocked' && (
-            <div class="row" style={{ marginTop: '0.5rem' }}>
-              <button type="button" class="btn btn-secondary" onClick={openLive}>
-                Try the camera again
-              </button>
-            </div>
+            <button type="button" class="btn btn-secondary" onClick={openLive}>
+              Try the camera again
+            </button>
           )}
         </div>
       )}
@@ -306,18 +347,20 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
           </ul>
         )}
         {looking?.problems[0] && !snapshot?.unsteady && <p class="muted small">{looking.problems[0]}</p>}
-        {photo.state === 'failed' && (
-          <div class="panel warn" role="status">
-            <strong>Couldn’t settle that photo.</strong>
+        {still.state === 'failed' && (
+          <div class="card notice" role="status">
+            <p>
+              <strong>Couldn’t settle that one.</strong>
+            </p>
             <ul>
-              {photo.problems.map((p) => (
+              {still.problems.map((p) => (
                 <li key={p}>{p}</li>
               ))}
             </ul>
-            <p class="small muted">Refusing is on purpose: a wrong split is worse than none.</p>
+            <p class="muted small">Refusing is on purpose: a wrong split is worse than none.</p>
           </div>
         )}
-        <p class="meta small muted">
+        <p class="meta">
           {resolution && <span>{resolution}</span>}
           {snapshot && <span>{snapshot.framesSeen} frames</span>}
           <span>{engine.name}</span>
@@ -325,10 +368,18 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
       </section>
 
       <footer class="actions">
-        {photoInput}
+        <label class={`btn btn-secondary${reading ? ' disabled' : ''}`}>
+          Use a photo
+          <input type="file" accept="image/*" capture="environment" class="sr-only" onChange={onPhoto} disabled={reading} />
+        </label>
         <button type="button" class="btn btn-secondary" onClick={onManual}>
           Type it in
         </button>
+        {phase !== 'idle' && (
+          <button type="button" class="btn btn-link" onClick={tryExample} disabled={reading}>
+            Try an example
+          </button>
+        )}
       </footer>
     </main>
   );

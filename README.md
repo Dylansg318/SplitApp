@@ -40,7 +40,10 @@ frames the receipt in a portrait guide, and OCRs the guide's pixels frame by
 frame until the bill settles: a frame that reconciles on its own is accepted at
 once; one that needs a correction must repeat; otherwise the multi-frame
 consensus deletes noise until the printed totals agree. **Use a photo** hands
-one camera-app photograph to the same parser. **Type it in** skips OCR.
+one camera-app photograph to the same parser. **Try an example receipt** runs
+the bundled `public/example-receipt.png` through that same path — a real read,
+not a canned result — so the UI can be exercised without a camera. **Type it
+in** skips OCR. The review screen can show the receipt the numbers came from.
 
 The review screen is the reconciler's verdict on the bill *as edited*: every
 number is a field, the banner re-judges on each edit, and the split exists only
