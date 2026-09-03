@@ -47,3 +47,9 @@ fixtures/receipts/synthetic/
 *.local
 # Staged by scripts/vendor-tesseract.ts before dev/build; ~12MB of engine.
 public/tesseract/
+
+# Real receipts are photographs of real bills: merchant, date, location, and
+# sometimes a card's last four. Synthetic fixtures are generated and safe; these
+# are not, and this repo is public. The set stays local; its README does not.
+fixtures/receipts/real/*
+!fixtures/receipts/real/README.md
