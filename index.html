@@ -2,6 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <!-- The build is location-agnostic (base: './'), so every asset URL is
+         relative to THIS document. A host that serves /demos/receipt-splitter/
+         as /demos/receipt-splitter (Cloudflare's drop-trailing-slash does)
+         would resolve ./assets/ one directory up. Pin the base to this
+         document's own directory before any URL is resolved. Runs first, and
+         is a classic script, so the module script below sees the base. -->
+    <script>
+      (function () {
+        var p = location.pathname;
+        if (!/\/$/.test(p) && !/\.html?$/i.test(p)) {
+          var b = document.createElement('base');
+          b.href = p + '/';
+          document.head.appendChild(b);
+        }
+      })();
+    </script>
     <!-- No apple-mobile-web-app-capable, on purpose: WebKit bug 185448 breaks
          getUserMedia in standalone mode. A home-screen icon must open in Safari. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
