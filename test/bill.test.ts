@@ -5,6 +5,7 @@ import {
   applyRepairs,
   billFromParsed,
   emptyBill,
+  nextPlaceholderName,
   parseTyped,
   person,
   removePerson,
@@ -119,6 +120,15 @@ describe('the editable bill', () => {
     bill = addItem(bill, 'Y', 200);
     const ids = [...bill.people.map((p) => p.id), ...bill.items.map((i) => i.id)];
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('nextPlaceholderName', () => {
+  it('skips names already at the table', () => {
+    expect(nextPlaceholderName([person('You'), person('Friend')])).toBe('Friend 2');
+    expect(nextPlaceholderName([person('You'), person('Friend'), person('Friend 2')])).toBe('Friend 3');
+    expect(nextPlaceholderName([person('You'), person('friend 2')])).toBe('Friend');
+    expect(nextPlaceholderName([])).toBe('Friend');
   });
 });
 

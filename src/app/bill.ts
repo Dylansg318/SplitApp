@@ -153,6 +153,19 @@ export const addPerson = (bill: EditableBill, name: string): EditableBill => ({
   people: [...bill.people, person(name)],
 });
 
+/**
+ * A placeholder name nobody at the table already has. "Friend", then
+ * "Friend 2", "Friend 3"… skipping any that are taken — two people both called
+ * "Friend 2" made the item chips ambiguous.
+ */
+export function nextPlaceholderName(people: Person[]): string {
+  const taken = new Set(people.map((p) => p.name.trim().toLowerCase()));
+  for (let n = 1; ; n++) {
+    const candidate = n === 1 ? 'Friend' : `Friend ${n}`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
 export const renamePerson = (bill: EditableBill, personId: string, name: string): EditableBill => ({
   ...bill,
   people: bill.people.map((p) => (p.id === personId ? { ...p, name } : p)),
