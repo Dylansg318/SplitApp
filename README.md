@@ -101,7 +101,7 @@ a fixture that agrees with a misread proves nothing.
 src/ocr/         engine seam, preprocessing, Node + browser glue
 src/parse/       geometry -> rows -> fields -> reconciliation
 src/split/       assignment and exact penny arithmetic
-src/capture/     camera glue (ported from the ERP) and the accept policy
+src/capture/     camera glue (ported from the internal ERP) and the accept policy
 src/app/         Preact UI: capture screen, review screen, editable bill
 scripts/         fixtures, bake-off, benchmarks, try, vendor-tesseract
 docs/plans/      the change record: decisions, measurements, and why

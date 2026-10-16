@@ -31,7 +31,7 @@ import type { FieldName, LineItem, ParsedReceipt } from '../parse/receipt';
  * 1. CONSECUTIVE, not tallied. A running vote lets a value that appeared once
  *    in ten frames win a plurality. The claim being tested is specifically that
  *    a wrong read cannot survive the hand moving.
- * 2. A BLANK FRAME BREAKS THE STREAK, deliberately. the ERP measured the lenient
+ * 2. A BLANK FRAME BREAKS THE STREAK, deliberately. The ERP measured the lenient
  *    variant (blanks ignored): it accepts ~10% more and leaves 1.5% wrong.
  * 3. THE WIDER THE CANDIDATE SET, THE MORE CONFIRMATION IT NEEDS. There, a
  *    format allow-list; here, how many money-shaped tokens the page carries. A

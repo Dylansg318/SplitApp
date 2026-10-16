@@ -442,13 +442,13 @@ That is exactly our lost-decimal failure: `3.75` read as `35`, `$23.00` as
 1. **Consecutive, not tallied.** A running vote lets a value seen once in ten
    frames win a plurality. The claim being tested is that a wrong read cannot
    survive the hand moving.
-2. **A blank frame breaks the streak.** the ERP measured the lenient variant
+2. **A blank frame breaks the streak.** The ERP measured the lenient variant
    (blanks ignored): accepts ~10% more, leaves 1.5% wrong.
 3. **The wider the candidate set, the more confirmation it needs.** There, a
    format allow-list; here, money-token density. The till report that settled by
    coincidence carried ~60 amounts — such a page now pays a third frame.
 4. **Do not sample too fast.** Adjacent frames become more alike, weakening the
-   independence the whole thing rests on. the ERP deliberately runs 60ms rather
+   independence the whole thing rests on. The ERP deliberately runs 60ms rather
    than 40ms. OCR at 200ms-2s per frame gives us this free; do not optimise it
    away.
 
@@ -462,7 +462,7 @@ must both survive the hand moving AND make the receipt add up.
 
 ### Memory discipline, also borrowed
 
-the ERP pins Jest to `maxWorkers: 2` (1 for DB suites) with
+The ERP pins Jest to `maxWorkers: 2` (1 for DB suites) with
 `workerIdleMemoryLimit: '1KB'` after exhausting memory on this machine, and its
 note is the right framing: pinning **makes the blast radius a decision instead
 of a default**. It matters more here — every tesseract.js worker holds its own
@@ -484,7 +484,7 @@ Eight simulated hand-held frames per receipt, four receipts with hand-read truth
 **1/4 either way — it gained one receipt and lost one.** Neither produced a
 wrong answer.
 
-The loss is the useful half. the ERP's own table shows confirmation COSTS
+The loss is the useful half. The ERP's own table shows confirmation COSTS
 acceptance (154/220 -> 108/220); they took that trade because wrong reads went
 9 -> 0. **We were already at zero wrong**, on 40 synthetic fixtures and on 13
 real photographs, because the reconciler does that job. A barcode carries no
@@ -519,7 +519,7 @@ Every frame in the hand-held bench was a re-jitter of ONE photograph. A decimal
 lost in that capture stayed lost in all eight. That models hand tremor but not
 RE-OBSERVATION, which is where the new information actually comes from — a live
 camera re-samples the paper with fresh autofocus, different parallax, moving
-specular highlights, flash. the ERP's scan-bench renders CLEAN and degrades every
+specular highlights, flash. The ERP's scan-bench renders CLEAN and degrades every
 frame independently, with an AR(1) walk controlling neighbour similarity; its
 `rho = 1` frozen-pose case is the pessimistic bound, and its README notes the
 byte-identical case is untested. **The bench was worse than that bound**: not
@@ -579,7 +579,7 @@ Real re-observation cannot be simulated from a single JPEG. Needed: a short
 video or burst of one receipt while the phone moves, and a flash comparison.
 Flash is the larger untested lever — dim fixtures went 0% -> 80% on software
 preprocessing alone, and flash attacks that at source instead of repairing it.
-the ERP's `<CameraScanner>` already has a working torch toggle to lift.
+The ERP's `<CameraScanner>` already has a working torch toggle to lift.
 
 ## Slices 5, 3b and 8 — the app, the camera, the embed
 
