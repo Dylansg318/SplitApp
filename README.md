@@ -35,15 +35,18 @@ photo never leaves the phone.
 
 ## The app
 
-Opens with the camera closed. **Open camera** asks for permission only then,
-frames the receipt in a portrait guide, and OCRs the guide's pixels frame by
-frame until the bill settles: a frame that reconciles on its own is accepted at
-once; one that needs a correction must repeat; otherwise the multi-frame
-consensus deletes noise until the printed totals agree. **Use a photo** hands
-one camera-app photograph to the same parser. **Try an example receipt** runs
-the bundled `public/example-receipt.png` through that same path — a real read,
-not a canned result — so the UI can be exercised without a camera. **Type it
-in** skips OCR. The review screen can show the receipt the numbers came from.
+Opens with the camera closed: a black finder carrying the live guide's corners.
+**Scan receipt** asks for permission only then, frames the receipt in that
+portrait guide, and OCRs the guide's pixels frame by frame until the bill
+settles: a frame that reconciles on its own is accepted at once; one that needs
+a correction must repeat; otherwise the multi-frame consensus deletes noise
+until the printed totals agree. The other ways in sit in one list under the
+finder. **Try the example receipt** runs the bundled `public/example-receipt.png`
+through the same parser — a real read, not a canned result — so the UI can be
+exercised without a camera. **Choose a photo** hands one camera-app photograph
+to that same path. **Type it in** skips OCR. A blocked or missing camera is
+said in the finder, with the list still under it. The review screen can show
+the receipt the numbers came from.
 
 The review screen is the reconciler's verdict on the bill *as edited*: every
 number is a field, the banner re-judges on each edit, and the split exists only

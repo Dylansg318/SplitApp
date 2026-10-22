@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { OcrEngine } from '../ocr/engine';
 import { grayToCanvas, sourceToGray } from '../ocr/canvas';
@@ -41,8 +42,8 @@ const GUIDE: Guide = { x: 0.08, y: 0.05, w: 0.84, h: 0.9 };
 /** Long-edge cap for a camera-app photo — see sourceToGray. */
 const STILL_MAX_EDGE = 3000;
 
-const CAMERA_BLOCKED = 'Camera blocked. Use a photo from your camera app, or type the receipt in.';
-const NO_CAMERA = 'No camera on this device. Use a photo, or type the receipt in.';
+const CAMERA_BLOCKED = 'The camera’s blocked. Choose a photo or type it in instead.';
+const NO_CAMERA = 'No camera here. Choose a photo or type it in instead.';
 
 const FIELDS = ['subtotal', 'tax', 'tip', 'total'] as const;
 
@@ -218,11 +219,11 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
         url,
         problems: state.sawMoney
           ? state.problems
-          : ['No prices found in that photo. Fill the frame with the receipt, flat, in good light.'],
+          : ['No prices found. Retake it flat, close up, in good light.'],
       });
     } catch (err) {
       console.error('[capture] photo failed', err);
-      setStill({ state: 'failed', url, problems: ['Could not read that photo.'] });
+      setStill({ state: 'failed', url, problems: ['Couldn’t open that photo.'] });
     } finally {
       busyRef.current = false;
     }
@@ -244,47 +245,103 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
       await readStill(await res.blob(), url, 'example');
     } catch (err) {
       console.error('[capture] example missing', err);
-      setStill({ state: 'failed', url: null, problems: ['The example receipt could not be loaded.'] });
+      setStill({ state: 'failed', url: null, problems: ['The example receipt didn’t load.'] });
     }
   };
 
   const reading = still.state === 'reading';
   const snapshot = looking?.snapshot;
   const status = (() => {
-    if (engineState === 'failed') return 'The reader failed to load. Reload the page to try again.';
+    if (engineState === 'failed') return 'Couldn’t load the reader. Reload the page to try again.';
     if (reading) return 'Reading the receipt…';
-    if (engineState === 'loading') return 'Loading the reader — one time, about 6 MB.';
-    if (phase === 'idle') return null;
+    if (engineState === 'loading') return 'Loading the reader. About 6 MB, first time only.';
     if (phase !== 'live') return null;
     if (!looking) return 'Fill the frame with the receipt.';
-    if (snapshot?.unsteady) return 'Hold steady — not reading the same numbers twice.';
-    if (looking.awaitingRepeat) return 'Nearly there — hold it for one more frame.';
-    if (!looking.sawMoney) return 'Looking for prices… move closer, or turn on the light.';
-    return 'Reading… keep the whole receipt in the frame.';
+    if (snapshot?.unsteady) return 'Hold steady.';
+    if (looking.awaitingRepeat) return 'Almost there. Hold still.';
+    if (!looking.sawMoney) return 'No prices yet. Move closer or add light.';
+    return 'Reading… keep the whole receipt in frame.';
   })();
 
   const fallback = phase === 'blocked' || phase === 'nocamera';
   const showStage = phase === 'starting' || phase === 'live';
   const showStill = !showStage && still.url !== null;
+  // The start screen, and where it lands when the camera can't open: the
+  // finder says why, and the other ways in stay right under it.
+  const home = (phase === 'idle' || fallback) && !showStill;
+  const homeNote = (() => {
+    if (fallback) return phase === 'blocked' ? CAMERA_BLOCKED : NO_CAMERA;
+    if (still.state === 'failed') return still.problems[0];
+    return status ?? 'Nothing leaves your phone.';
+  })();
 
   return (
     <main class="screen capture">
       <header class="hero">
-        <p class="eyebrow">Receipt Splitter</p>
         <h1>Split the check from a photo.</h1>
-        <p class="lede">Point the camera at the receipt, tap who had what, done. Nothing leaves your phone.</p>
+        <p class="lede">Each person’s share with tax and tip, checked against the total.</p>
       </header>
 
-      {phase === 'idle' && !showStill && (
-        <div class="stage idle">
-          <button type="button" class="btn btn-primary big" onClick={openLive} disabled={engineState === 'failed'}>
-            Open camera
-          </button>
-          <button type="button" class="btn btn-link" onClick={tryExample} disabled={reading}>
-            Try an example receipt
-          </button>
-          <span class="hint">Asks for the camera only when you tap</span>
-        </div>
+      {home && (
+        <>
+          {/* The camera before it's on: the same guide the live preview draws,
+              so Scan turns on what's already there. */}
+          <div class="stage finder">
+            <div class="corners" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+              <i />
+            </div>
+            {phase !== 'nocamera' && (
+              <button type="button" class="btn btn-primary big" onClick={openLive} disabled={engineState === 'failed'}>
+                <Icon>
+                  <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.1l1.4-2h6l1.4 2h2.1A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" />
+                  <circle cx="12" cy="12.75" r="3.25" />
+                </Icon>
+                {phase === 'blocked' ? 'Try the camera again' : 'Scan receipt'}
+              </button>
+            )}
+            <p class="finder-note" role={fallback ? 'alert' : undefined} aria-live="polite">
+              {homeNote}
+            </p>
+          </div>
+
+          <ul class="card options">
+            <li>
+              <button type="button" class="option" onClick={tryExample}>
+                <Icon>
+                  <path d="M6 3.5h12v17l-2-1.25-2 1.25-2-1.25-2 1.25-2-1.25-2 1.25z" />
+                  <path d="M9 8h6M9 11.5h6M9 15h3.5" />
+                </Icon>
+                Try the example receipt
+                <Chevron />
+              </button>
+            </li>
+            <li>
+              <label class="option">
+                <Icon>
+                  <rect x="3.5" y="5" width="17" height="14" rx="2" />
+                  <circle cx="9" cy="10" r="1.75" />
+                  <path d="m20.5 16-4.5-4.5L7 19" />
+                </Icon>
+                Choose a photo
+                <Chevron />
+                <input type="file" accept="image/*" capture="environment" class="sr-only" onChange={onPhoto} />
+              </label>
+            </li>
+            <li>
+              <button type="button" class="option" onClick={onManual}>
+                <Icon>
+                  <rect x="2.75" y="6" width="18.5" height="12" rx="2" />
+                  <path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M8 14h8" />
+                </Icon>
+                Type it in
+                <Chevron />
+              </button>
+            </li>
+          </ul>
+        </>
       )}
 
       {showStill && (
@@ -292,8 +349,8 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
           <img src={still.url ?? undefined} alt="The receipt being read" />
           {reading && <div class="stage-note">Reading…</div>}
           {!reading && (
-            <button type="button" class="btn btn-ghost close" onClick={() => setStill({ state: 'idle', url: null, problems: [] })} aria-label="Dismiss">
-              ×
+            <button type="button" class="btn btn-ghost close" onClick={() => setStill({ state: 'idle', url: null, problems: [] })} aria-label="Back">
+              <Cross />
             </button>
           )}
         </div>
@@ -313,77 +370,99 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
             </button>
           )}
           <button type="button" class="btn btn-ghost close" onClick={closeLive} aria-label="Close camera">
-            ×
+            <Cross />
           </button>
           {phase === 'starting' && <div class="stage-note">Opening the camera…</div>}
         </div>
       )}
 
-      {fallback && (
-        <div class="card notice" role="alert">
-          <p>{phase === 'blocked' ? CAMERA_BLOCKED : NO_CAMERA}</p>
-          {phase === 'blocked' && (
-            <button type="button" class="btn btn-secondary" onClick={openLive}>
-              Try the camera again
-            </button>
-          )}
-        </div>
-      )}
-
-      <section class="status" aria-live="polite">
-        {status && <p class="status-line">{status}</p>}
-        {snapshot && phase === 'live' && (
-          <ul class="streaks" aria-label="Confirmation progress">
-            {FIELDS.map((f) => (
-              <li key={f} class={snapshot.confirmed[f] !== null ? 'confirmed' : snapshot.streaks[f] > 0 ? 'seen' : ''}>
-                <span class="dots" aria-hidden="true">
-                  {Array.from({ length: snapshot.confirmationsNeeded }, (_, i) => (
-                    <i key={i} class={i < snapshot.streaks[f] ? 'on' : ''} />
-                  ))}
-                </span>
-                {f}
-              </li>
-            ))}
-          </ul>
-        )}
-        {looking?.problems[0] && !snapshot?.unsteady && <p class="muted small">{looking.problems[0]}</p>}
-        {still.state === 'failed' && (
-          <div class="card notice" role="status">
-            <p>
-              <strong>Couldn’t settle that one.</strong>
-            </p>
-            <ul>
-              {still.problems.map((p) => (
-                <li key={p}>{p}</li>
+      {!home && (
+        <section class="status" aria-live="polite">
+          {status && <p class="status-line">{status}</p>}
+          {snapshot && phase === 'live' && (
+            <ul class="streaks" aria-label="Confirmation progress">
+              {FIELDS.map((f) => (
+                <li key={f} class={snapshot.confirmed[f] !== null ? 'confirmed' : snapshot.streaks[f] > 0 ? 'seen' : ''}>
+                  <span class="dots" aria-hidden="true">
+                    {Array.from({ length: snapshot.confirmationsNeeded }, (_, i) => (
+                      <i key={i} class={i < snapshot.streaks[f] ? 'on' : ''} />
+                    ))}
+                  </span>
+                  {f}
+                </li>
               ))}
             </ul>
-            <p class="muted small">Refusing is on purpose: a wrong split is worse than none.</p>
-          </div>
-        )}
-        <p class="meta">
-          {resolution && <span>{resolution}</span>}
-          {snapshot && <span>{snapshot.framesSeen} frames</span>}
-          <span>{engine.name}</span>
-        </p>
-      </section>
+          )}
+          {looking?.problems[0] && !snapshot?.unsteady && <p class="muted small">{looking.problems[0]}</p>}
+          {still.state === 'failed' && (
+            <div class="card notice" role="status">
+              <p>
+                <strong>Couldn’t read that receipt.</strong>
+              </p>
+              <ul>
+                {still.problems.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+              <p class="muted small">It won’t show a split it can’t check.</p>
+            </div>
+          )}
+          {(resolution || snapshot) && (
+            <p class="meta">
+              {resolution && <span>{resolution}</span>}
+              {snapshot && <span>{snapshot.framesSeen} frames</span>}
+            </p>
+          )}
+        </section>
+      )}
 
-      <footer class="actions">
-        <label class={`btn btn-secondary${reading ? ' disabled' : ''}`}>
-          Use a photo
-          <input type="file" accept="image/*" capture="environment" class="sr-only" onChange={onPhoto} disabled={reading} />
-        </label>
-        <button type="button" class="btn btn-secondary" onClick={onManual}>
-          Type it in
-        </button>
-        {phase !== 'idle' && (
-          <button type="button" class="btn btn-link" onClick={tryExample} disabled={reading}>
-            Try an example
+      {!home && (
+        <footer class="actions">
+          <label class={`btn btn-secondary${reading ? ' disabled' : ''}`}>
+            Choose a photo
+            <input type="file" accept="image/*" capture="environment" class="sr-only" onChange={onPhoto} disabled={reading} />
+          </label>
+          <button type="button" class="btn btn-secondary" onClick={onManual}>
+            Type it in
           </button>
-        )}
-      </footer>
+          <button type="button" class="btn btn-link" onClick={tryExample} disabled={reading}>
+            Try the example
+          </button>
+        </footer>
+      )}
     </main>
   );
 }
+
+/** One stroke family for every glyph on this screen: 24px grid, 1.75 stroke, round ends. */
+function Icon({ children, class: cls = 'icon' }: { children: ComponentChildren; class?: string }) {
+  return (
+    <svg
+      class={cls}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.75"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+const Chevron = () => (
+  <Icon class="icon chevron">
+    <path d="m9 6 6 6-6 6" />
+  </Icon>
+);
+
+const Cross = () => (
+  <Icon>
+    <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
+  </Icon>
+);
 
 async function loadBitmap(file: Blob): Promise<ImageBitmap | HTMLImageElement> {
   if (typeof createImageBitmap === 'function') {
