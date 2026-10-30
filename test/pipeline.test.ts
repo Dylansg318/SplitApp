@@ -3,7 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { TesseractEngine } from '../src/ocr/tesseract';
-import { preparePng } from '../src/ocr/node';
+import { prepare } from '../src/ocr/node';
 import { parseReceipt } from '../src/parse/receipt';
 import { reconcile } from '../src/parse/reconcile';
 import type { ReceiptGroundTruth } from '../src/types';
@@ -57,7 +57,7 @@ describe.skipIf(!available)('pipeline over synthetic fixtures', () => {
     let settled = 0;
 
     for (const { gt, image } of fixtures) {
-      const { words } = await engine.recognize(await preparePng(image));
+      const { words } = await engine.recognize(await prepare(image));
       const result = reconcile(parseReceipt(words));
       if (result.status === 'unresolved') continue;
 
@@ -109,7 +109,7 @@ describe.skipIf(!available)('pipeline over synthetic fixtures', () => {
     const unexpectedSuccess: string[] = [];
 
     for (const { gt, image } of easy) {
-      const { words } = await engine.recognize(await preparePng(image));
+      const { words } = await engine.recognize(await prepare(image));
       const result = reconcile(parseReceipt(words));
       const known = gt.id in KNOWN_UNREADABLE;
 

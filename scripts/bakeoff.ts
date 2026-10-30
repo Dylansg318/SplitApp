@@ -14,7 +14,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { existsSync } from 'node:fs';
 import { TesseractEngine } from '../src/ocr/tesseract';
-import { preparePng } from '../src/ocr/node';
+import { prepare } from '../src/ocr/node';
 import type { OcrEngine } from '../src/ocr/engine';
 import type { ReceiptGroundTruth, Word, Cents } from '../src/types';
 import { parseCents } from '../src/types';
@@ -111,7 +111,7 @@ function levenshtein(a: string, b: string): number {
 }
 
 async function measure(engine: OcrEngine, fx: Fixture): Promise<Measurement> {
-  const input = PREPROCESS ? await preparePng(fx.imagePath) : fx.imagePath;
+  const input = PREPROCESS ? await prepare(fx.imagePath) : fx.imagePath;
   const result = await engine.recognize(input);
   const got = moneyTokens(result.words);
 

@@ -42,23 +42,3 @@ export function sourceToGray(source: Source, { maxEdge }: { maxEdge?: number } =
   context.drawImage(source, 0, 0, width, height);
   return toGray(context.getImageData(0, 0, width, height).data, width, height);
 }
-
-/** Back to a canvas, which is one of the inputs tesseract.js accepts directly. */
-export function grayToCanvas(img: Gray): HTMLCanvasElement {
-  const canvas = document.createElement('canvas');
-  canvas.width = img.width;
-  canvas.height = img.height;
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('grayToCanvas: 2D context unavailable');
-
-  const rgba = context.createImageData(img.width, img.height);
-  for (let i = 0, p = 0; i < img.data.length; i++, p += 4) {
-    const v = img.data[i]!;
-    rgba.data[p] = v;
-    rgba.data[p + 1] = v;
-    rgba.data[p + 2] = v;
-    rgba.data[p + 3] = 255;
-  }
-  context.putImageData(rgba, 0, 0);
-  return canvas;
-}

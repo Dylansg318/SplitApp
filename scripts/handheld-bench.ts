@@ -13,8 +13,7 @@
  */
 import sharp from 'sharp';
 import { TesseractEngine } from '../src/ocr/tesseract';
-import { grayToPng } from '../src/ocr/node';
-import { preprocess } from '../src/ocr/preprocess';
+import { preprocess, type Gray } from '../src/ocr/preprocess';
 import { parseReceipt } from '../src/parse/receipt';
 import { reconcile } from '../src/parse/reconcile';
 import { ReceiptConsensus } from '../src/ocr/consensus';
@@ -54,7 +53,7 @@ function rng(seed: number): () => number {
  * "extract_area: bad extract area". Rotating once up front also stops a 6MB
  * JPEG being decoded again for every frame.
  */
-async function frame(base: Buffer, W: number, H: number, rand: () => number): Promise<Buffer> {
+async function frame(base: Buffer, W: number, H: number, rand: () => number): Promise<Gray> {
   const inset = 0.02 + rand() * 0.02;
   const dx = (rand() - 0.5) * 0.02;
   const dy = (rand() - 0.5) * 0.02;
@@ -72,7 +71,7 @@ async function frame(base: Buffer, W: number, H: number, rand: () => number): Pr
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  return grayToPng(preprocess({ data: new Uint8ClampedArray(data), width: info.width, height: info.height }));
+  return preprocess({ data: new Uint8ClampedArray(data), width: info.width, height: info.height });
 }
 
 const matches = (got: Record<string, Cents | null>, truth: Case['truth']): boolean =>

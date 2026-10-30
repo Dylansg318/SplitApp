@@ -43,10 +43,12 @@ a correction must repeat; otherwise the multi-frame consensus deletes noise
 until the printed totals agree. The other ways in sit in one list under the
 finder. **Try the example receipt** runs the bundled `public/example-receipt.png`
 through the same parser — a real read, not a canned result — so the UI can be
-exercised without a camera. **Choose a photo** hands one camera-app photograph
-to that same path. **Type it in** skips OCR. A blocked or missing camera is
-said in the finder, with the list still under it. The review screen can show
-the receipt the numbers came from.
+exercised without a camera. **Choose a photo** hands one picture — from the
+library, a screenshot, or a fresh camera-app shot — to that same path. **Type it
+in** skips OCR. A blocked or missing camera is said in the finder, with the list
+still under it. Leaving the tab turns the camera off. The review screen can show
+the receipt the numbers came from, and is kept for the tab, so a reload (a phone
+reclaiming a background tab while someone pays) brings the bill back.
 
 The review screen is the reconciler's verdict on the bill *as edited*: every
 number is a field, the banner re-judges on each edit, and the split exists only

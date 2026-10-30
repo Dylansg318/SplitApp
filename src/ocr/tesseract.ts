@@ -1,6 +1,14 @@
 import { createWorker, type Worker } from 'tesseract.js';
 import type { OcrEngine, ImageLike } from './engine';
+import type { Gray } from './preprocess';
 import type { OcrResult, Word } from '../types';
+
+/**
+ * The resolution Tesseract is told the image has. The bake-off was tuned on
+ * PNGs stamped 144 dpi; a canvas PNG or a PGM carries none, and Leptonica then
+ * assumes 70. Pinning it here makes the phone see what was measured.
+ */
+const DPI = '144';
 
 /**
  * Tesseract.js v7 behind the OcrEngine seam.
@@ -47,7 +55,8 @@ export class TesseractEngine implements OcrEngine {
     if (this.#worker) return Promise.resolve();
     if (!this.#initPromise) {
       this.#initPromise = createWorker('eng', undefined, { ...this.#paths, gzip: true })
-        .then((worker) => {
+        .then(async (worker) => {
+          await worker.setParameters({ user_defined_dpi: DPI });
           this.#worker = worker;
         })
         .finally(() => {
@@ -63,8 +72,9 @@ export class TesseractEngine implements OcrEngine {
     if (!worker) throw new Error('TesseractEngine: worker missing after init()');
 
     const started = performance.now();
+    const input = isGray(image) ? toPgm(image) : image;
     // Third argument is the output selector; without `blocks` there is no geometry.
-    const { data } = await worker.recognize(image as never, {}, { blocks: true });
+    const { data } = await worker.recognize(input as never, {}, { blocks: true });
     const ms = performance.now() - started;
 
     const words = flattenWords(data.blocks);
@@ -122,6 +132,23 @@ function flattenWords(root: unknown): Word[] {
   };
 
   visit(root);
+  return out;
+}
+
+const isGray = (image: ImageLike): image is Gray =>
+  typeof image === 'object' && 'data' in image && image.data instanceof Uint8ClampedArray;
+
+/**
+ * The luma plane as a binary PGM: a short text header, then the bytes as they
+ * are. Leptonica reads it natively, so a frame reaches the engine without a
+ * canvas, an RGBA expansion or a PNG encode on the main thread — measured on the
+ * example receipt, the same text as the PNG route.
+ */
+function toPgm({ data, width, height }: Gray): Uint8Array {
+  const header = new TextEncoder().encode(`P5\n${width} ${height}\n255\n`);
+  const out = new Uint8Array(header.length + data.length);
+  out.set(header);
+  out.set(data, header.length);
   return out;
 }
 

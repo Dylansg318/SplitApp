@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   addItem,
   addPerson,
+  adoptIds,
   applyRepairs,
   billFromParsed,
   emptyBill,
@@ -132,6 +133,19 @@ describe('nextPlaceholderName', () => {
   });
 });
 
+describe('adoptIds', () => {
+  it('keeps ids made after a reload clear of the restored bill', () => {
+    // As a reloaded page sees it: ids from an earlier page, well past this counter.
+    const restored = {
+      ...emptyBill([{ id: 'p900', name: 'Alex' }]),
+      items: [{ id: 'i901', desc: 'TEA', price: 300, assignees: [] }],
+    };
+    adoptIds(restored);
+    const added = addItem(restored).items.at(-1)!;
+    expect(Number(added.id.slice(1))).toBeGreaterThan(901);
+  });
+});
+
 describe('parseTyped', () => {
   it.each([
     ['12.34', 1234],
@@ -140,6 +154,10 @@ describe('parseTyped', () => {
     ['12.5', 1250],
     ['1,234.00', 123400],
     [' 0.07 ', 7],
+    // A comma-decimal keypad: "12,50" used to read as $1,250.00 and "12,5" as $125.00.
+    ['12,50', 1250],
+    ['12,5', 1250],
+    ['1,234', 123400],
   ])('%s -> %i', (raw, cents) => expect(parseTyped(raw)).toBe(cents));
 
   it.each(['', 'abc', '12.345', '-3', '1.2.3'])('rejects %j', (raw) =>

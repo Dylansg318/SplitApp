@@ -17,7 +17,7 @@ import { existsSync } from 'node:fs';
 import { basename, extname, join, resolve } from 'node:path';
 import sharp from 'sharp';
 import { TesseractEngine } from '../src/ocr/tesseract';
-import { readGray, grayToPng } from '../src/ocr/node';
+import { readGray } from '../src/ocr/node';
 import { preprocess } from '../src/ocr/preprocess';
 import { parseReceipt } from '../src/parse/receipt';
 import { reconcile } from '../src/parse/reconcile';
@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   );
 
   const engine = new TesseractEngine();
-  const input = usePreprocessing ? await grayToPng(preprocess(await readGray(imagePath))) : imagePath;
+  const input = usePreprocessing ? preprocess(await readGray(imagePath)) : imagePath;
 
   const started = Date.now();
   const { words } = await engine.recognize(input);

@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { OcrEngine } from '../ocr/engine';
-import { grayToCanvas, sourceToGray } from '../ocr/canvas';
+import { sourceToGray } from '../ocr/canvas';
 import { preprocess } from '../ocr/preprocess';
 import { CaptureSession, type Looking, type Settled } from '../capture/session';
 import {
@@ -125,6 +125,18 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine]);
 
+  // Leaving the tab turns the camera off; Scan turns it back on. Nothing
+  // should hold the camera, or run OCR, behind a page nobody is looking at.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden && streamRef.current) closeLive();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+    // closeLive only touches refs and state setters, so the first one serves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /** The user asked for the camera. Only now does the permission prompt appear. */
   const openLive = async () => {
     if (!hasCamera()) {
@@ -153,6 +165,11 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
       return;
     }
     streamRef.current = stream;
+    // The OS can take the camera back (a call, another app). Land on the start
+    // screen rather than a frozen preview that is still "reading".
+    stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+      if (streamRef.current === stream) closeLive();
+    });
     setTorchAvailable(hasTorch(stream));
     setResolution(trackResolution(stream));
     setPhase('live');
@@ -164,7 +181,7 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
         // Nothing to OCR with yet, or a photo is being read: this frame is skipped,
         // not blanked — skipping does not touch the streak, blanking would break it.
         if (deadRef.current || busyRef.current || !engineReadyRef.current) return false;
-        const { words } = await engine.recognize(grayToCanvas(preprocess(gray)));
+        const { words } = await engine.recognize(preprocess(gray));
         if (deadRef.current || streamRef.current === null) return false;
         const state = sessionRef.current.observeWords(words);
         if (state.kind === 'settled') {
@@ -207,7 +224,7 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
       const bitmap = await loadBitmap(blob);
       const gray = sourceToGray(bitmap, { maxEdge: STILL_MAX_EDGE });
       if ('close' in bitmap) bitmap.close();
-      const { words } = await engine.recognize(grayToCanvas(preprocess(gray)));
+      const { words } = await engine.recognize(preprocess(gray));
       if (deadRef.current) return;
       const state = CaptureSession.still(words);
       if (state.kind === 'settled') {
@@ -254,7 +271,7 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
   const status = (() => {
     if (engineState === 'failed') return 'Couldn’t load the reader. Reload the page to try again.';
     if (reading) return 'Reading the receipt…';
-    if (engineState === 'loading') return 'Loading the reader. About 6 MB, first time only.';
+    if (engineState === 'loading') return 'Loading the reader. About 4.5 MB, first time only.';
     if (phase !== 'live') return null;
     if (!looking) return 'Fill the frame with the receipt.';
     if (snapshot?.unsteady) return 'Hold steady.';
@@ -327,7 +344,7 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
                 </Icon>
                 Choose a photo
                 <Chevron />
-                <input type="file" accept="image/*" capture="environment" class="sr-only" onChange={onPhoto} />
+                <input type="file" accept="image/*" class="sr-only" onChange={onPhoto} />
               </label>
             </li>
             <li>
@@ -407,8 +424,9 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
               <p class="muted small">It won’t show a split it can’t check.</p>
             </div>
           )}
+          {/* Diagnostics, and they change every frame: kept out of the live region's announcements. */}
           {(resolution || snapshot) && (
-            <p class="meta">
+            <p class="meta" aria-hidden="true">
               {resolution && <span>{resolution}</span>}
               {snapshot && <span>{snapshot.framesSeen} frames</span>}
             </p>
@@ -420,7 +438,7 @@ export function Capture({ engine, onSettled, onManual }: CaptureProps) {
         <footer class="actions">
           <label class={`btn btn-secondary${reading ? ' disabled' : ''}`}>
             Choose a photo
-            <input type="file" accept="image/*" capture="environment" class="sr-only" onChange={onPhoto} disabled={reading} />
+            <input type="file" accept="image/*" class="sr-only" onChange={onPhoto} disabled={reading} />
           </label>
           <button type="button" class="btn btn-secondary" onClick={onManual}>
             Type it in

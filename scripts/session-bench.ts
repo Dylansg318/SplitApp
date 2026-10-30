@@ -27,8 +27,7 @@
  */
 import sharp from 'sharp';
 import { TesseractEngine } from '../src/ocr/tesseract';
-import { grayToPng } from '../src/ocr/node';
-import { preprocess } from '../src/ocr/preprocess';
+import { preprocess, type Gray } from '../src/ocr/preprocess';
 import { parseReceipt } from '../src/parse/receipt';
 import { reconcile } from '../src/parse/reconcile';
 import { ReceiptConsensus } from '../src/ocr/consensus';
@@ -67,7 +66,7 @@ function rng(seed: number): () => number {
 interface Walk { rotate: number; blur: number; gain: number; bias: number }
 
 /** Degrade the clean render as one frame of a hand-held session would be. */
-async function renderFrame(clean: Buffer, walk: Walk, rand: () => number, hard: number): Promise<Buffer> {
+async function renderFrame(clean: Buffer, walk: Walk, rand: () => number, hard: number): Promise<Gray> {
   const spread = (lo: number, hi: number) => lo + rand() * (hi - lo);
   walk.rotate = ar1(walk.rotate, spread(-3, 3));
   walk.blur = ar1(walk.blur, spread(-0.8, 0.8));
@@ -84,7 +83,7 @@ async function renderFrame(clean: Buffer, walk: Walk, rand: () => number, hard: 
   const meta = await sharp(clean).metadata();
   const width = Math.max(280, Math.round((meta.width ?? 900) * Math.max(0.35, 1 - hard * 0.42)));
   const { data, info } = await img.resize({ width }).raw().toBuffer({ resolveWithObject: true });
-  return grayToPng(preprocess({ data: new Uint8ClampedArray(data), width: info.width, height: info.height }));
+  return preprocess({ data: new Uint8ClampedArray(data), width: info.width, height: info.height });
 }
 
 const FIELDS = ['subtotal', 'tax', 'tip', 'total'] as const;

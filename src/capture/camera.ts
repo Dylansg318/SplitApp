@@ -184,8 +184,10 @@ export function startFrameLoop({ video, guide, onFrame, attemptMs = 300 }: Frame
     // Monotonic: a wall-clock jump must not park the loop.
     const startedAt = performance.now();
     let accepted = false;
-    // A suspended camera (tab hidden, OS lock) shows up as readyState < 2, and
-    // arrives downstream as a blank frame — which breaks the streak. A gap is a gap.
+    // A stalled camera shows up as readyState < 2. That attempt is skipped, not
+    // handed downstream as a blank: no picture was taken, so there is nothing
+    // to observe and the streak waits for the next real frame. (A hidden tab
+    // never gets here — Capture closes the camera on visibilitychange.)
     if (ctx && video.readyState >= 2 && video.videoWidth > 0) {
       const { sx, sy, sw, sh } = guideSourceRect(video, guide);
       canvas.width = sw;

@@ -34,6 +34,17 @@ export type TotalsField = 'subtotal' | 'tax' | 'tip' | 'total';
 let nextId = 1;
 const id = (prefix: string): string => `${prefix}${nextId++}`;
 
+/**
+ * A bill brought back after a reload carries ids from the page that made it,
+ * while this page's counter starts again at 1. Move the counter past them, or
+ * the next item added shares an id with one already on the bill.
+ */
+export function adoptIds(bill: EditableBill): void {
+  for (const { id: taken } of [...bill.people, ...bill.items]) {
+    nextId = Math.max(nextId, (Number(taken.slice(1)) || 0) + 1);
+  }
+}
+
 export const person = (name: string): Person => ({ id: id('p'), name });
 
 export const emptyBill = (people: Person[]): EditableBill => ({
@@ -178,10 +189,17 @@ export const removePerson = (bill: EditableBill, personId: string): EditableBill
   items: bill.items.map((i) => ({ ...i, assignees: i.assignees.filter((p) => p !== personId) })),
 });
 
-/** Same shape as parseCents but forgiving of what people type: "12", "12.5", "$12.50". */
+/**
+ * Same shape as parseCents but forgiving of what people type: "12", "12.5",
+ * "$12.50", "1,234.50" — and "12,50", because a phone set to a comma-decimal
+ * region has a comma on its decimal keypad. Stripping that comma read "12,50"
+ * as $1,250.00. A comma is the decimal mark when no point is present and one or
+ * two digits follow it; any other comma groups thousands.
+ */
 export function parseTyped(raw: string): Cents | null {
-  const s = raw.trim().replace(/[$,\s]/g, '');
-  if (s === '') return null;
+  const typed = raw.trim().replace(/[$\s]/g, '');
+  if (typed === '') return null;
+  const s = /^\d+,\d{1,2}$/.test(typed) ? typed.replace(',', '.') : typed.replace(/,/g, '');
   const m = s.match(/^(\d+)(?:\.(\d{0,2}))?$/);
   if (!m) return null;
   const cents = (m[2] ?? '').padEnd(2, '0');

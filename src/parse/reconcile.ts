@@ -213,9 +213,10 @@ export function reconcile(parsed: ParsedReceipt): Reconciliation {
             .join(', ')}). Cannot choose safely.`,
     );
   } else if (!subtotalContradicted()) {
+    // Worded for both routes in: a camera that could not read it, and a person still typing it.
     problems.push(
-      `Could not read ${FIELDS.filter((f) => values[f] === null).join(', ')} from the receipt, ` +
-        'and too little is known to derive the missing values.',
+      `Missing ${FIELDS.filter((f) => values[f] === null).join(', ')}, ` +
+        'and too little is known to work out the rest.',
     );
   }
 

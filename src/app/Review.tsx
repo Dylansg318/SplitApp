@@ -78,12 +78,12 @@ export function Review({ bill, origin, image, onChange, onRescan }: ReviewProps)
       <section class="card">
         <h2>People</h2>
         <ul class="people">
-          {bill.people.map((p) => (
+          {bill.people.map((p, n) => (
             <li key={p.id} class="pill">
               <input
                 class="name"
                 value={p.name}
-                aria-label="Name"
+                aria-label={`Person ${n + 1} name`}
                 onInput={(e) => onChange(renamePerson(bill, p.id, (e.currentTarget as HTMLInputElement).value))}
               />
               {bill.people.length > 1 && (
@@ -113,18 +113,28 @@ export function Review({ bill, origin, image, onChange, onRescan }: ReviewProps)
         </h2>
         {bill.items.length === 0 && <p class="muted">No line items. The total will be split evenly.</p>}
         <ul class="items">
-          {bill.items.map((item) => (
+          {bill.items.map((item, n) => (
             <li key={item.id} class="item">
               <div class="item-row">
                 <input
                   class="desc"
                   value={item.desc}
                   placeholder="Item"
-                  aria-label="Item description"
+                  aria-label={`Item ${n + 1}`}
                   onInput={(e) => onChange(setItemDesc(bill, item.id, (e.currentTarget as HTMLInputElement).value))}
                 />
-                <Money value={item.price} onCommit={(c) => onChange(setItemPrice(bill, item.id, c ?? 0))} />
-                <button type="button" class="remove" aria-label="Remove item" title="Remove item" onClick={() => onChange(removeItem(bill, item.id))}>
+                <Money
+                  value={item.price}
+                  label={`Price of ${item.desc || `item ${n + 1}`}`}
+                  onCommit={(c) => onChange(setItemPrice(bill, item.id, c ?? 0))}
+                />
+                <button
+                  type="button"
+                  class="remove"
+                  aria-label={`Remove ${item.desc || `item ${n + 1}`}`}
+                  title="Remove item"
+                  onClick={() => onChange(removeItem(bill, item.id))}
+                >
                   ×
                 </button>
               </div>
@@ -163,7 +173,7 @@ export function Review({ bill, origin, image, onChange, onRescan }: ReviewProps)
           {FIELDS.map(({ key, label }) => (
             <li key={key} class={suspect.has(key) ? 'suspect' : ''}>
               <span>{label}</span>
-              <Money value={bill[key]} allowEmpty onCommit={(c) => onChange(setField(bill, key, c))} />
+              <Money value={bill[key]} label={label} allowEmpty onCommit={(c) => onChange(setField(bill, key, c))} />
             </li>
           ))}
         </ul>
@@ -197,49 +207,61 @@ export function Review({ bill, origin, image, onChange, onRescan }: ReviewProps)
   );
 }
 
+/**
+ * The verdict, in ONE live region whose contents change: a status swapped in
+ * as a new element is not reliably announced, and an alert on every failing
+ * edit is noise. role="status" is polite and speaks when the words change.
+ */
 function Banner({ bill, v, onApply }: { bill: EditableBill; v: ReturnType<typeof verdict>; onApply: () => void }) {
   const r = v.reconciliation;
-  if (r.status === 'reconciled') {
-    const proof =
-      bill.items.length > 0
-        ? `${bill.items.length} items add to the subtotal, and subtotal + tax + tip equals the total.`
-        : 'Subtotal + tax + tip equals the total.';
-    return (
-      <div class="banner ok" role="status">
-        <strong>Adds up.</strong> {proof}
-      </div>
-    );
-  }
-  if (r.status === 'repaired') {
-    return (
-      <div class="banner warn" role="status">
-        <strong>One correction needed before the split shows.</strong>
-        <ul>
-          {r.repairs.map((rep) => (
-            <li key={rep.field}>
-              <b>{rep.field}</b> {rep.from === null ? 'not read' : `read as ${formatCents(rep.from)}`} → <b>{formatCents(rep.to)}</b>
-              <span class="muted small"> — {rep.reason}</span>
-            </li>
-          ))}
-        </ul>
-        <div class="row">
-          <button type="button" class="btn btn-primary" onClick={onApply}>
-            Apply {r.repairs.length === 1 ? 'correction' : 'corrections'}
-          </button>
-          <span class="muted small">or fix the numbers yourself below</span>
-        </div>
-      </div>
-    );
-  }
+  // Nothing typed yet is a blank form, not a receipt that failed to add up.
+  const blank = bill.items.length === 0 && FIELDS.every(({ key }) => bill[key] === null);
+  const tone = blank ? 'idle' : r.status === 'reconciled' ? 'ok' : r.status === 'repaired' ? 'warn' : 'bad';
   return (
-    <div class="banner bad" role="alert">
-      <strong>Doesn’t add up — no split until it does.</strong>
-      <ul>
-        {r.problems.map((p) => (
-          <li key={p}>{p}</li>
-        ))}
-        {r.problems.length === 0 && <li>Fill in the printed totals.</li>}
-      </ul>
+    <div class={`banner ${tone}`} role="status">
+      {tone === 'idle' && (
+        <>
+          <strong>Type in the receipt.</strong> Add the items, then the printed totals. The split shows once they add up.
+        </>
+      )}
+      {tone === 'ok' && (
+        <>
+          <strong>Adds up.</strong>{' '}
+          {bill.items.length > 0
+            ? `${bill.items.length} items add to the subtotal, and subtotal + tax + tip equals the total.`
+            : 'Subtotal + tax + tip equals the total.'}
+        </>
+      )}
+      {tone === 'warn' && (
+        <>
+          <strong>One correction needed before the split shows.</strong>
+          <ul>
+            {r.repairs.map((rep) => (
+              <li key={rep.field}>
+                <b>{rep.field}</b> {rep.from === null ? 'not read' : `read as ${formatCents(rep.from)}`} → <b>{formatCents(rep.to)}</b>
+                <span class="muted small"> — {rep.reason}</span>
+              </li>
+            ))}
+          </ul>
+          <div class="row">
+            <button type="button" class="btn btn-primary" onClick={onApply}>
+              Apply {r.repairs.length === 1 ? 'correction' : 'corrections'}
+            </button>
+            <span class="muted small">or fix the numbers yourself below</span>
+          </div>
+        </>
+      )}
+      {tone === 'bad' && (
+        <>
+          <strong>Doesn’t add up — no split until it does.</strong>
+          <ul>
+            {r.problems.map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+            {r.problems.length === 0 && <li>Fill in the printed totals.</li>}
+          </ul>
+        </>
+      )}
     </div>
   );
 }
@@ -249,7 +271,18 @@ function Banner({ bill, v, onApply }: { bill: EditableBill; v: ReturnType<typeof
  * anything it cannot parse — the previous value stays and the field turns red
  * until the text is a number again.
  */
-function Money({ value, allowEmpty = false, onCommit }: { value: Cents | null; allowEmpty?: boolean; onCommit: (c: Cents | null) => void }) {
+function Money({
+  value,
+  label,
+  allowEmpty = false,
+  onCommit,
+}: {
+  value: Cents | null;
+  /** What the field is, for a screen reader: the visible label sits beside the field, not on it. */
+  label: string;
+  allowEmpty?: boolean;
+  onCommit: (c: Cents | null) => void;
+}) {
   const [text, setText] = useState(value === null ? '' : formatCents(value));
   const [bad, setBad] = useState(false);
   useEffect(() => {
@@ -281,6 +314,7 @@ function Money({ value, allowEmpty = false, onCommit }: { value: Cents | null; a
   return (
     <input
       class={`money${bad ? ' bad' : ''}`}
+      aria-label={label}
       inputMode="decimal"
       value={text}
       placeholder={allowEmpty ? '—' : '0.00'}

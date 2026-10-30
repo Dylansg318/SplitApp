@@ -65,7 +65,7 @@ API keys, no network after first load. Confidence comes from arithmetic, not fro
 - [x] 3b. Camera capture: rear cam, guide frame, multi-frame voting — built, opt-in on tap; phone check pending        DONE (code) / TODO (device)
 - [x] 4. Split model: assignee sets, family-style default, proportional tax/tip, exact penny rounding              DONE a4d219b
 - [x] 5. Mobile UI: item list, tap-to-assign, inline number editing, reconciliation banner                         DONE
-- [ ] 6. Persistence (IndexedDB) + URL-fragment share + share image via Web Share API                              TODO
+- [~] 6. Persistence + URL-fragment share + share image via Web Share API — survives a reload (per-tab sessionStorage) DONE; share TODO
 - [ ] 7. PWA shell: manifest, service worker, offline model cache, iOS-safe (no standalone)                        TODO
 - [x] 8. Portfolio embed via iframe lane + rewrite `receipt-splitter/index.mdx` (status, AI claims)                 DONE
 
@@ -654,3 +654,36 @@ the only judgement. Added **Try an example receipt**: the bundled synthetic
 brunch receipt goes through the still-photo path, so the demo is a real read
 (5 items, 54.00/3.38/11.88/69.26) and not a canned screen. The review screen
 can show the source image beside the numbers. Verified in headless Chromium.
+
+## Audit fixes, 2026-10-30
+
+An audit against current practice and the leading split apps found these;
+each was reproduced before it was fixed, and each fix has a test or a measurement.
+
+- **Typed "12,50" became $1,250.00.** A comma-decimal phone puts a comma on the
+  decimal keypad and `parseTyped` stripped it; a bill typed that way reconciled
+  at 100x. A comma is now the decimal mark when one or two digits follow it and
+  no point is present. `parseCents` also reads exact thousands grouping
+  ("1,234.56"), so a bill over $999.99 is no longer lost; a wrong grouping is
+  still refused as a misread.
+- **"TURKEY SUB 9.50" was the subtotal.** The bare `SUB` label, there since the
+  first parser, matched a sandwich above the real subtotal. Removed.
+- **"Choose a photo" opened the camera.** `capture="environment"` skips the
+  library on iOS and Android Chrome, so a saved photo or screenshot could not be
+  picked — a top complaint in Tab's reviews. Removed; the picker offers both.
+- **The bill did not survive a reload.** Kept per tab in sessionStorage, the
+  narrow half of slice 6. Ids on a restored bill move the counter past them.
+- **The camera ran behind a hidden tab**, and a track the OS took back left a
+  frozen preview. Both now return to the start screen.
+- **Frames reach the engine as PGM**, not canvas -> PNG: no per-frame canvas,
+  RGBA expansion or PNG encode on the main thread, and the engine is told
+  144 dpi, which the bake-off's PNGs always carried but canvas PNGs never did.
+  Bake-off identical on every one of the 40 fixtures (30/40 totals intact, 91%
+  total-field recall, 94% item recall) before and after.
+- **The fallback language download was a different model.** projectnaptha's
+  4.0.0 file (10.9MB, legacy engine included) replaced by the jsdelivr
+  4.0.0_best_int file, byte-identical to what the bake-off measured.
+- Accessibility: money fields have names, remove buttons name their item, the
+  verdict is one polite live region, the frame counter is out of it, small text
+  clears 4.5:1, chips and remove buttons are full-height targets, and a blank
+  typed-in bill opens on a prompt rather than a red error.

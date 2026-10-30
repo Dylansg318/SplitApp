@@ -35,8 +35,10 @@ export function apportion(amount: Cents, weights: number[]): Cents[] {
     .map((value, index) => ({ index, frac: value - Math.floor(value) }))
     .sort((a, b) => b.frac - a.frac || a.index - b.index);
 
-  // `remainder` is always in [0, n) for non-negative inputs, so this terminates
-  // without wrapping. Negative amounts (a refund) walk the order backwards.
+  // Flooring every share leaves `remainder` in [0, n) — negative amounts too,
+  // since floor rounds toward -infinity — so this hands out at most one penny
+  // each. The downward step is a guard: should floating point ever leave the
+  // floors summing above `amount`, it walks back rather than looping forever.
   const step = remainder >= 0 ? 1 : -1;
   for (let i = 0; remainder !== 0; i++) {
     const target = order[step > 0 ? i % n : n - 1 - (i % n)]!;

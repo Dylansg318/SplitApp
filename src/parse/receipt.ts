@@ -31,9 +31,13 @@ export interface ParsedReceipt {
  * Label patterns, checked in order. SUBTOTAL must be tested before TOTAL or it
  * matches as a total and the arithmetic silently uses the wrong number — the
  * kind of bug that produces a plausible split that is simply wrong.
+ *
+ * No bare SUB: "TURKEY SUB 9.50" sits above the real subtotal, so first
+ * occurrence made the sandwich the subtotal and every sandwich-shop receipt
+ * was refused.
  */
 const LABELS: [FieldName, RegExp][] = [
-  ['subtotal', /\b(SUB\s?-?\s?TOTAL|SUBTTL|SUB)\b/],
+  ['subtotal', /\b(SUB\s?-?\s?TOTAL|SUBTTL)\b/],
   ['tax', /\b(TAX|VAT|GST|HST|PST|SALES\s?TAX)\b/],
   ['tip', /\b(TIP|GRATUITY|SERVICE\s?(CHARGE|CHG)?)\b/],
   ['total', /\b(GRAND\s?TOTAL|TOTAL|BALANCE(\s?DUE)?|AMOUNT\s?DUE)\b/],

@@ -77,9 +77,12 @@ ul { list-style: none; margin: 0; padding: 0; }
 .btn-link { background: transparent; color: var(--accent); padding-left: 0.4rem; padding-right: 0.4rem; }
 .btn.big { padding: 0.9rem 1.8rem; font-size: 1.05rem; font-weight: 600; }
 /* The remove control: a small filled circle, the way iOS clears a field. It
-   lives INSIDE the thing it removes, so it can never read as a separator. */
-.remove { font: inherit; font-size: 0.9rem; line-height: 1; width: 1.35rem; height: 1.35rem; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--ink-3); color: var(--card); cursor: pointer; padding: 0; transition: background 0.12s ease; }
-.remove:hover { background: var(--bad); color: #fff; }
+   lives INSIDE the thing it removes, so it can never read as a separator.
+   The circle is 1.35rem, but the button is a full row tall: the padding is
+   tappable and the fill is clipped to the content box. ink-2, not ink-3, so
+   the glyph clears 3:1 against its fill. */
+.remove { font: inherit; font-size: 0.9rem; line-height: 1; width: 2.5rem; height: 2.5rem; padding: 0.575rem; background-clip: content-box; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 50%; background-color: var(--ink-2); color: var(--card); cursor: pointer; transition: background-color 0.12s ease; }
+.remove:hover { background-color: var(--bad); color: #fff; }
 .row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
 .row.between { justify-content: space-between; }
 
@@ -126,13 +129,14 @@ ul { list-style: none; margin: 0; padding: 0; }
 .status { display: flex; flex-direction: column; gap: 0.5rem; min-height: 3.5rem; padding: 0 0.25rem; }
 .status-line { font-weight: 500; }
 .streaks { display: flex; gap: 1rem; flex-wrap: wrap; }
-.streaks li { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--ink-3); text-transform: capitalize; }
+/* Small text uses ink-2: ink-3 is ~2.4:1 on the ground, under the 4.5:1 text needs. */
+.streaks li { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--ink-2); text-transform: capitalize; }
 .streaks li.seen { color: var(--ink); }
 .streaks li.confirmed { color: var(--ok); }
 .dots { display: inline-flex; gap: 3px; }
 .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--border); }
 .dots i.on { background: currentColor; }
-.meta { display: flex; gap: 0.75rem; font-size: 0.75rem; color: var(--ink-3); }
+.meta { display: flex; gap: 0.75rem; font-size: 0.75rem; color: var(--ink-2); }
 .actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: auto; align-items: center; }
 
 /* --- review ---------------------------------------------------------- */
@@ -145,6 +149,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .banner.warn strong { color: var(--warn); }
 .banner.bad { background: var(--bad-bg); }
 .banner.bad strong { color: var(--bad); }
+.banner.idle { background: var(--card); }
 .receipt-toggle { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
 .receipt-image { margin: 0; width: 100%; border-radius: var(--radius); overflow: hidden; background: var(--card); border: 1px solid var(--border); }
 .receipt-image img { display: block; width: 100%; height: auto; max-height: 70dvh; object-fit: contain; }
@@ -154,7 +159,7 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 input.money { width: 6.5rem; text-align: right; font-variant-numeric: tabular-nums; }
 input.money.bad { border-color: var(--bad); color: var(--bad); }
 .people { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-.people .pill { display: flex; align-items: center; gap: 0.25rem; background: var(--field); border-radius: 12px; padding-right: 0.45rem; }
+.people .pill { display: flex; align-items: center; gap: 0.25rem; background: var(--field); border-radius: 12px; padding-right: 0.1rem; }
 .people .pill:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
 .people .name { width: 7rem; background: transparent; }
 .people .name:focus { box-shadow: none; border-color: transparent; }
@@ -164,7 +169,8 @@ input.money.bad { border-color: var(--bad); color: var(--bad); }
 .item-row { display: flex; gap: 0.5rem; align-items: center; }
 .item-row .desc { flex: 1; }
 .chips { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.5rem; align-items: center; }
-.chip { font: inherit; font-size: 0.85rem; font-weight: 500; border-radius: 999px; padding: 0.3rem 0.8rem; border: 1px solid var(--border); background: transparent; color: var(--ink-2); cursor: pointer; transition: background 0.12s ease, color 0.12s ease; -webkit-tap-highlight-color: transparent; }
+/* 2.6rem is Apple's 44pt minimum at this root size; a chip is tapped at a dinner table. */
+.chip { font: inherit; font-size: 0.85rem; font-weight: 500; border-radius: 999px; min-height: 2.6rem; padding: 0.3rem 0.9rem; border: 1px solid var(--border); background: transparent; color: var(--ink-2); cursor: pointer; transition: background 0.12s ease, color 0.12s ease; -webkit-tap-highlight-color: transparent; }
 .chip.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .totals li { display: flex; justify-content: space-between; align-items: center; padding: 0.45rem 0; border-top: 1px solid var(--border); }
 .totals li:first-child { border-top: 0; padding-top: 0; }

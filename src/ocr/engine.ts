@@ -1,11 +1,15 @@
 import type { OcrResult } from '../types';
+import type { Gray } from './preprocess';
 
 /**
  * Anything tesseract.js will accept: a path or URL (Node + browser), a Buffer /
- * TypedArray, a Blob, or a canvas/image element. Kept deliberately wide so the
- * bake-off harness can pass file paths and the app can pass a captured frame.
+ * TypedArray, a Blob, or a canvas/image element — plus the preprocessed luma
+ * plane itself, which is what both the app and the bake-off actually hand over.
+ * Kept deliberately wide so the bake-off harness can pass file paths and the app
+ * can pass a captured frame.
  */
 export type ImageLike =
+  | Gray
   | string
   | Buffer
   | Uint8Array

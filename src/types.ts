@@ -64,9 +64,15 @@ export interface ReceiptGroundTruth {
 export const formatCents = (c: Cents): string =>
   `${Math.trunc(Math.abs(c) / 100)}.${String(Math.abs(c) % 100).padStart(2, '0')}`;
 
-/** "12.34" / "$12.34" / "12,34" -> 1234. Returns null if not a money token. */
+/**
+ * "12.34" / "$12.34" / "12,34" / "1,234.56" -> cents. Returns null if not a
+ * money token. A comma is the decimal mark unless it groups thousands in front
+ * of a point, and the grouping must be exact: "12,34.56" is a misread, refused.
+ */
 export const parseCents = (raw: string): Cents | null => {
-  const m = raw.trim().replace(/[$\s]/g, '').replace(',', '.').match(/^(\d+)\.(\d{2})$/);
+  const s = raw.trim().replace(/[$\s]/g, '');
+  const plain = /^\d{1,3}(,\d{3})+\.\d{2}$/.test(s) ? s.replace(/,/g, '') : s.replace(',', '.');
+  const m = plain.match(/^(\d+)\.(\d{2})$/);
   if (!m) return null;
   return Number(m[1]) * 100 + Number(m[2]);
 };

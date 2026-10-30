@@ -26,7 +26,10 @@ import { join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const out = join(root, 'public', 'tesseract');
-const LANG_URL = 'https://tessdata.projectnaptha.com/4.0.0/eng.traineddata.gz';
+// The LSTM-only best_int model the Node bake-off downloads and was measured on
+// (byte-identical to its cached eng.traineddata). projectnaptha's 4.0.0 file is
+// a different, 10.9MB model that carries the legacy engine the core never runs.
+const LANG_URL = 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz';
 
 const exists = (p: string) => access(p).then(() => true, () => false);
 
