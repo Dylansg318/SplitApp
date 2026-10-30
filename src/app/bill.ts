@@ -16,7 +16,10 @@ import { splitBill, splitEvenly, SplitError, type BillItem, type Person, type Sp
  *     the user says so.
  *   - The split exists only while the bill reconciles with NO outstanding
  *     repair (invariant 2). Edit a total so the books stop closing and the
- *     split disappears the same render, with the banner saying why.
+ *     split disappears the same render, with the banner saying why. The one
+ *     derivation that needs no confirming is a receipt with no tip printed.
+ *   - A tip the table adds goes ON TOP of the printed total, outside the
+ *     receipt's arithmetic, so the printed numbers stay checked as printed.
  *
  * Nothing in here touches the DOM, so it is tested as plain functions.
  */
@@ -27,7 +30,22 @@ export interface EditableBill {
   tax: Cents | null;
   tip: Cents | null;
   total: Cents | null;
+  addedTip: AddedTip;
 }
+
+/**
+ * A tip the table adds on top of the printed total: chosen, never read. Kept
+ * apart from `tip`, which is the receipt's own number and is checked against
+ * its arithmetic like the rest. A percentage follows the subtotal if an item
+ * is corrected afterwards; an amount stays what was typed.
+ */
+export type AddedTip = { percent: number } | { cents: Cents } | null;
+
+/** A percentage of the pre-tax subtotal, to the cent. */
+export const percentOf = (subtotal: Cents, percent: number): Cents => Math.round((subtotal * percent) / 100);
+
+const addedTipCents = (tip: AddedTip, subtotal: Cents): Cents =>
+  tip === null ? 0 : 'percent' in tip ? percentOf(subtotal, tip.percent) : tip.cents;
 
 export type TotalsField = 'subtotal' | 'tax' | 'tip' | 'total';
 
@@ -54,6 +72,7 @@ export const emptyBill = (people: Person[]): EditableBill => ({
   tax: null,
   tip: null,
   total: null,
+  addedTip: null,
 });
 
 /** The camera's reading, verbatim. Repairs are NOT pre-applied — the banner asks. */
@@ -65,6 +84,7 @@ export function billFromParsed(parsed: ParsedReceipt, people: Person[]): Editabl
     tax: parsed.fields.tax,
     tip: parsed.fields.tip,
     total: parsed.fields.total,
+    addedTip: null,
   };
 }
 
@@ -82,33 +102,49 @@ export function judge(bill: EditableBill): Reconciliation {
 
 export interface Verdict {
   reconciliation: Reconciliation;
-  /** Present only when the bill reconciles outright. */
+  /** Present only while the printed numbers close the books. */
   split: Split | null;
   /** The split had to fall back to the total alone because there are no items. */
   evenly: boolean;
+  /**
+   * No tip is printed and subtotal + tax already equal the total: the pre-tip
+   * check most tables are handed. The reconciler records tip = 0 as derived,
+   * but nothing was misread and there is nothing to confirm, so the books close.
+   */
+  noTipPrinted: boolean;
+  /** The added tip in cents; 0 until the books close. */
+  addedTip: Cents;
 }
 
 export function verdict(bill: EditableBill): Verdict {
   const reconciliation = judge(bill);
-  if (reconciliation.status !== 'reconciled') return { reconciliation, split: null, evenly: false };
+  const { status, repairs } = reconciliation;
+  const noTipPrinted =
+    status === 'repaired' && bill.tip === null && repairs.length === 1 && repairs[0]!.field === 'tip' && repairs[0]!.to === 0;
+  const none: Verdict = { reconciliation, split: null, evenly: false, noTipPrinted, addedTip: 0 };
+  if (status !== 'reconciled' && !noTipPrinted) return none;
 
   const { subtotal, tax, tip, total } = reconciliation.values;
-  if (subtotal === null || tax === null || tip === null || total === null) {
-    return { reconciliation, split: null, evenly: false };
-  }
-  if (bill.people.length === 0) return { reconciliation, split: null, evenly: false };
+  if (subtotal === null || tax === null || tip === null || total === null) return none;
+  if (bill.people.length === 0) return none;
 
+  // On top of the printed total, and shared like the printed tip: by what each person ate.
+  const addedTip = addedTipCents(bill.addedTip, subtotal);
   if (bill.items.length === 0) {
-    return { reconciliation, split: splitEvenly(bill.people, total), evenly: true };
+    return { ...none, split: splitEvenly(bill.people, total + addedTip), evenly: true, addedTip };
   }
   try {
-    return {
-      reconciliation,
-      split: splitBill({ people: bill.people, items: bill.items, subtotal, tax, tip, total }),
-      evenly: false,
-    };
+    const split = splitBill({
+      people: bill.people,
+      items: bill.items,
+      subtotal,
+      tax,
+      tip: tip + addedTip,
+      total: total + addedTip,
+    });
+    return { ...none, split, addedTip };
   } catch (err) {
-    if (err instanceof SplitError) return { reconciliation, split: null, evenly: false };
+    if (err instanceof SplitError) return none;
     throw err;
   }
 }
@@ -119,6 +155,8 @@ export function applyRepairs(bill: EditableBill, reconciliation: Reconciliation)
   for (const repair of reconciliation.repairs) next[repair.field] = repair.to;
   return next;
 }
+
+export const setAddedTip = (bill: EditableBill, addedTip: AddedTip): EditableBill => ({ ...bill, addedTip });
 
 export const setField = (bill: EditableBill, field: TotalsField, value: Cents | null): EditableBill => ({
   ...bill,

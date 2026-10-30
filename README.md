@@ -53,7 +53,10 @@ reclaiming a background tab while someone pays) brings the bill back.
 The review screen is the reconciler's verdict on the bill *as edited*: every
 number is a field, the banner re-judges on each edit, and the split exists only
 while the books close. Tap a name on an item to assign it; nobody assigned
-means everyone.
+means everyone. A check with no tip printed closes as it stands. **Add a tip**
+puts 15, 18 or 20% of the subtotal, or a typed amount, on top of the printed
+total and shares it like the food; the printed numbers are still checked
+exactly as printed.
 
 Camera access needs HTTPS (or localhost), so the phone test is the deployed
 copy: `https://<portfolio>/demos/receipt-splitter/`.

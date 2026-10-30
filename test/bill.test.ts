@@ -10,6 +10,7 @@ import {
   parseTyped,
   person,
   removePerson,
+  setAddedTip,
   setField,
   setItemPrice,
   toggleAssignee,
@@ -71,16 +72,61 @@ describe('the editable bill', () => {
     expect(bill.total).toBe(5700);
   });
 
-  it('applying repairs writes the proposed values in and restores the split', () => {
+  it('splits a receipt with no tip printed as it stands — nothing was misread', () => {
     let bill = billFromParsed(parsed, people());
     bill = setField(bill, 'tip', null);
     bill = setField(bill, 'total', 4817);
+    const v = verdict(bill);
+    expect(v.noTipPrinted).toBe(true);
+    expect(v.split!.total).toBe(4817);
+    expect(bill.tip).toBeNull();
+  });
+
+  it('applying repairs writes the proposed values in and restores the split', () => {
+    let bill = billFromParsed(parsed, people());
+    bill = setField(bill, 'tax', null);
     const before = verdict(bill);
     expect(before.split).toBeNull();
-    expect(before.reconciliation.repairs[0]).toMatchObject({ field: 'tip', to: 0 });
+    expect(before.reconciliation.repairs[0]).toMatchObject({ field: 'tax', to: 367 });
     bill = applyRepairs(bill, before.reconciliation);
-    expect(bill.tip).toBe(0);
-    expect(verdict(bill).split!.total).toBe(4817);
+    expect(bill.tax).toBe(367);
+    expect(verdict(bill).split!.total).toBe(5707);
+  });
+
+  it('adds a tip on top of the printed total, shared like the food', () => {
+    let bill = billFromParsed(parsed, people());
+    bill = setField(bill, 'tip', null);
+    bill = setField(bill, 'total', 4817);
+    const [alex] = bill.people;
+    bill = toggleAssignee(bill, bill.items[0]!.id, alex!.id);
+    bill = setAddedTip(bill, { percent: 20 });
+    const v = verdict(bill);
+    // 20% of the 44.50 subtotal; the receipt's own numbers are untouched.
+    expect(v.addedTip).toBe(890);
+    expect(v.reconciliation.values.total).toBe(4817);
+    expect(v.split!.total).toBe(4817 + 890);
+    expect(v.split!.shares.reduce((s, p) => s + p.total, 0)).toBe(4817 + 890);
+    expect(v.split!.shares.reduce((s, p) => s + p.tip, 0)).toBe(890);
+    // Alex had the burger as well as a third of the rest, so Alex tips the most.
+    const alexTip = v.split!.shares.find((s) => s.personId === alex!.id)!.tip;
+    expect(alexTip).toBe(Math.max(...v.split!.shares.map((s) => s.tip)));
+  });
+
+  it('a typed tip amount is used as typed, and none means none', () => {
+    let bill = billFromParsed(parsed, people());
+    bill = setAddedTip(bill, { cents: 1000 });
+    expect(verdict(bill).split!.total).toBe(5707 + 1000);
+    bill = setAddedTip(bill, null);
+    expect(verdict(bill).split!.total).toBe(5707);
+  });
+
+  it('adds no tip while the printed numbers do not close', () => {
+    let bill = billFromParsed(parsed, people());
+    bill = setAddedTip(bill, { percent: 20 });
+    bill = setField(bill, 'total', 5700);
+    const v = verdict(bill);
+    expect(v.split).toBeNull();
+    expect(v.addedTip).toBe(0);
   });
 
   it('editing an item price so items disagree with the subtotal refuses the split', () => {

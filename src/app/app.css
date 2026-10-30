@@ -172,6 +172,8 @@ input.money.bad { border-color: var(--bad); color: var(--bad); }
 /* 2.6rem is Apple's 44pt minimum at this root size; a chip is tapped at a dinner table. */
 .chip { font: inherit; font-size: 0.85rem; font-weight: 500; border-radius: 999px; min-height: 2.6rem; padding: 0.3rem 0.9rem; border: 1px solid var(--border); background: transparent; color: var(--ink-2); cursor: pointer; transition: background 0.12s ease, color 0.12s ease; -webkit-tap-highlight-color: transparent; }
 .chip.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.chips input.money { min-height: 2.6rem; }
+.tip-note { margin-bottom: 0.6rem; }
 .totals li { display: flex; justify-content: space-between; align-items: center; padding: 0.45rem 0; border-top: 1px solid var(--border); }
 .totals li:first-child { border-top: 0; padding-top: 0; }
 .totals li:last-child span { font-weight: 600; }

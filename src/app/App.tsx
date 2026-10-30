@@ -19,7 +19,7 @@ type Screen = { kind: 'capture' } | ReviewScreen;
  */
 const SAVED = 'receipt-splitter:review';
 /** Bump when EditableBill changes shape: an older save is dropped, not misread. */
-const SAVED_VERSION = 1;
+const SAVED_VERSION = 2;
 
 function loadSaved(): ReviewScreen | null {
   try {

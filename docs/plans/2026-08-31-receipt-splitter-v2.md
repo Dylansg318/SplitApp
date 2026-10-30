@@ -687,3 +687,19 @@ each was reproduced before it was fixed, and each fix has a test or a measuremen
   verdict is one polite live region, the frame counter is out of it, small text
   clears 4.5:1, chips and remove buttons are full-height targets, and a blank
   typed-in bill opens on a prompt rather than a red error.
+
+### Tips added at the table
+
+Most checks arrive before the tip. Typing one into the printed Tip field broke
+the receipt's own arithmetic, and the reconciler then offered two equally good
+corrections (tip or total) and refused both: the split vanished until the user
+did the addition. The tip the table adds is now its own thing, `addedTip` —
+15/18/20% of the pre-tax subtotal shown in dollars, or a typed amount — and goes
+ON TOP of the printed total, apportioned like the printed tip by what each
+person ate. The printed numbers are still reconciled exactly as printed; the
+split's check reads "$48.17 printed + $8.90 tip = $57.07".
+
+A receipt with no tip printed no longer asks for a correction. The reconciler
+still records tip = 0 as derived, so the live camera still wants that bill in
+two frames before accepting it; the review screen treats it as closed, because
+nothing was misread and there is nothing to confirm.

@@ -7,9 +7,11 @@ import {
   applyRepairs,
   nextPlaceholderName,
   parseTyped,
+  percentOf,
   removeItem,
   removePerson,
   renamePerson,
+  setAddedTip,
   setField,
   setItemDesc,
   setItemPrice,
@@ -26,7 +28,9 @@ import {
  * top is the reconciler's verdict on the bill AS EDITED, and the split at the
  * bottom exists only while that verdict is clean (invariant 2). Tapping a name
  * on an item moves money between people and never changes the total
- * (invariant 5).
+ * (invariant 5). A tip the table adds is chosen just above the split and goes
+ * on top of the printed total, so the receipt's own numbers stay checked as
+ * printed.
  */
 export interface ReviewProps {
   bill: EditableBill;
@@ -47,7 +51,8 @@ const FIELDS: { key: TotalsField; label: string }[] = [
 export function Review({ bill, origin, image, onChange, onRescan }: ReviewProps) {
   const v = verdict(bill);
   const { reconciliation, split } = v;
-  const suspect = new Set(reconciliation.repairs.map((r) => r.field));
+  // A tip that is simply not printed is not a misread, so it is not flagged.
+  const suspect = new Set(v.noTipPrinted ? [] : reconciliation.repairs.map((r) => r.field));
   const itemsSum = bill.items.reduce((s, i) => s + i.price, 0);
   const [showImage, setShowImage] = useState(false);
 
@@ -180,6 +185,15 @@ export function Review({ bill, origin, image, onChange, onRescan }: ReviewProps)
       </section>
 
       {split && (
+        <AddTip
+          bill={bill}
+          subtotal={reconciliation.values.subtotal!}
+          printedTip={reconciliation.values.tip!}
+          onChange={onChange}
+        />
+      )}
+
+      {split && (
         <section class="card split">
           <h2>Each person owes</h2>
           {v.evenly && <p class="muted small">No line items, so the total is split evenly.</p>}
@@ -199,11 +213,82 @@ export function Review({ bill, origin, image, onChange, onRescan }: ReviewProps)
             ))}
           </ul>
           <p class="sum ok">
-            <span class="check" aria-hidden="true">✓</span> ${formatCents(split.total)} — matches the printed total
+            <span class="check" aria-hidden="true">✓</span>{' '}
+            {v.addedTip > 0
+              ? `$${formatCents(split.total - v.addedTip)} printed + $${formatCents(v.addedTip)} tip = $${formatCents(split.total)}`
+              : `$${formatCents(split.total)} — matches the printed total`}
           </p>
         </section>
       )}
     </main>
+  );
+}
+
+const TIP_PERCENTS = [15, 18, 20];
+
+/**
+ * The tip the table adds. Most checks arrive before the tip, and typing one
+ * into the printed Tip field would break the receipt's own arithmetic, so it
+ * lives here: a percentage of the pre-tax subtotal shown in dollars, or an
+ * amount. Shared like the printed tip, by what each person ate.
+ */
+function AddTip({
+  bill,
+  subtotal,
+  printedTip,
+  onChange,
+}: {
+  bill: EditableBill;
+  subtotal: Cents;
+  printedTip: Cents;
+  onChange: (bill: EditableBill) => void;
+}) {
+  const chosen = bill.addedTip;
+  const typed = chosen !== null && 'cents' in chosen ? chosen.cents : null;
+  return (
+    <section class="card">
+      <h2>
+        Add a tip <span class="muted small">on top of the receipt’s total</span>
+      </h2>
+      {printedTip > 0 && (
+        <p class="muted small tip-note">This receipt already includes a ${formatCents(printedTip)} tip.</p>
+      )}
+      <div class="chips" role="group" aria-label="Tip to add">
+        <button
+          type="button"
+          class={`chip${chosen === null ? ' on' : ''}`}
+          aria-pressed={chosen === null}
+          onClick={() => onChange(setAddedTip(bill, null))}
+        >
+          None
+        </button>
+        {TIP_PERCENTS.map((percent) => {
+          const on = chosen !== null && 'percent' in chosen && chosen.percent === percent;
+          return (
+            <button
+              key={percent}
+              type="button"
+              class={`chip${on ? ' on' : ''}`}
+              aria-pressed={on}
+              onClick={() => onChange(setAddedTip(bill, { percent }))}
+            >
+              {percent}% · ${formatCents(percentOf(subtotal, percent))}
+            </button>
+          );
+        })}
+        <Money
+          value={typed}
+          label="Other tip amount"
+          placeholder="Other $"
+          allowEmpty
+          // Leaving the box empty only clears a typed amount, never a percentage picked above it.
+          onCommit={(cents) => {
+            if (cents !== null) onChange(setAddedTip(bill, { cents }));
+            else if (typed !== null) onChange(setAddedTip(bill, null));
+          }}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -216,7 +301,9 @@ function Banner({ bill, v, onApply }: { bill: EditableBill; v: ReturnType<typeof
   const r = v.reconciliation;
   // Nothing typed yet is a blank form, not a receipt that failed to add up.
   const blank = bill.items.length === 0 && FIELDS.every(({ key }) => bill[key] === null);
-  const tone = blank ? 'idle' : r.status === 'reconciled' ? 'ok' : r.status === 'repaired' ? 'warn' : 'bad';
+  const tone =
+    blank ? 'idle' : r.status === 'reconciled' || v.noTipPrinted ? 'ok' : r.status === 'repaired' ? 'warn' : 'bad';
+  const sum = v.noTipPrinted ? 'subtotal + tax equals the total (no tip printed)' : 'subtotal + tax + tip equals the total';
   return (
     <div class={`banner ${tone}`} role="status">
       {tone === 'idle' && (
@@ -228,8 +315,8 @@ function Banner({ bill, v, onApply }: { bill: EditableBill; v: ReturnType<typeof
         <>
           <strong>Adds up.</strong>{' '}
           {bill.items.length > 0
-            ? `${bill.items.length} items add to the subtotal, and subtotal + tax + tip equals the total.`
-            : 'Subtotal + tax + tip equals the total.'}
+            ? `${bill.items.length} items add to the subtotal, and ${sum}.`
+            : `${sum[0]!.toUpperCase()}${sum.slice(1)}.`}
         </>
       )}
       {tone === 'warn' && (
@@ -274,12 +361,14 @@ function Banner({ bill, v, onApply }: { bill: EditableBill; v: ReturnType<typeof
 function Money({
   value,
   label,
+  placeholder,
   allowEmpty = false,
   onCommit,
 }: {
   value: Cents | null;
   /** What the field is, for a screen reader: the visible label sits beside the field, not on it. */
   label: string;
+  placeholder?: string;
   allowEmpty?: boolean;
   onCommit: (c: Cents | null) => void;
 }) {
@@ -317,7 +406,7 @@ function Money({
       aria-label={label}
       inputMode="decimal"
       value={text}
-      placeholder={allowEmpty ? '—' : '0.00'}
+      placeholder={placeholder ?? (allowEmpty ? '—' : '0.00')}
       aria-invalid={bad}
       onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)}
       onBlur={commit}
