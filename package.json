@@ -4,6 +4,7 @@
   "version": "2.0.0",
   "type": "module",
   "description": "Split a restaurant bill from a photo. On-device OCR, no LLM, no network, no cost.",
+  "license": "MIT",
   "engines": {
     "node": ">=20.11.0"
   },
